@@ -5,8 +5,6 @@ Kivowiki-Mods（中文名：古书馆的秘密工房）是一个面向 Chromium 
 项目地址：[https://kivo.wiki/](https://kivo.wiki/)。作者：朝禊ASOGI，B站空间：[https://space.bilibili.com/315312](https://space.bilibili.com/315312)。
 
 
-推送test1111
-
 ## 项目定位
 
 - 支持 Microsoft Edge、Google Chrome 及其他兼容 Manifest V3 的 Chromium 浏览器。
