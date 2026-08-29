@@ -323,7 +323,7 @@ var KivoQuickToolsConfigBundle = (() => {
     const previewToolbar = createNode("div", "preview-toolbar");
     const previewNight = createNode("div", "preview-button secondary", "\u25D0");
     const previewAtlas = createNode("div", "preview-button", "\u518C");
-    const previewExpand = createNode("div", "preview-button", "\u2303");
+    const previewExpand = createNode("div", "preview-button", "\u25A6");
     const previewTop = createNode("div", "preview-button", "\u2191");
     previewBox.append(previewSurface, previewToolbar);
     preview.append(previewBox);
@@ -335,7 +335,7 @@ var KivoQuickToolsConfigBundle = (() => {
       previewToolbar.dataset.position = settings.position;
       previewToolbar.style.setProperty("--preview-size", `${Math.max(24, Math.round(settings.size * 0.72))}px`);
       previewNight.classList.toggle("active", settings.nightMode);
-      previewExpand.textContent = settings.expanded ? "\xD7" : "\u2303";
+      previewExpand.textContent = settings.expanded ? "\xD7" : "\u25A6";
       const collapsedTools = ["night", "atlas", "top"].filter(
         (id) => collapsed.has(id) && settings.expanded
       );

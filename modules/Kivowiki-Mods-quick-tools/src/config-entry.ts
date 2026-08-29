@@ -303,7 +303,7 @@ export const mountConfig = (context: ModuleContext): void => {
   const previewToolbar = createNode("div", "preview-toolbar");
   const previewNight = createNode("div", "preview-button secondary", "◐");
   const previewAtlas = createNode("div", "preview-button", "册");
-  const previewExpand = createNode("div", "preview-button", "⌃");
+  const previewExpand = createNode("div", "preview-button", "▦");
   const previewTop = createNode("div", "preview-button", "↑");
   previewBox.append(previewSurface, previewToolbar);
   preview.append(previewBox);
@@ -317,7 +317,7 @@ export const mountConfig = (context: ModuleContext): void => {
     previewToolbar.dataset.position = settings.position;
     previewToolbar.style.setProperty("--preview-size", `${Math.max(24, Math.round(settings.size * 0.72))}px`);
     previewNight.classList.toggle("active", settings.nightMode);
-    previewExpand.textContent = settings.expanded ? "×" : "⌃";
+    previewExpand.textContent = settings.expanded ? "×" : "▦";
     // 预览严格复刻真实工具栏顺序：折叠区、展开键、固定区。
     const collapsedTools = (["night", "atlas", "top"] as ToolId[]).filter(
       (id) => collapsed.has(id) && settings.expanded

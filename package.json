@@ -4,7 +4,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "build": "npm --prefix modules/quick-tools run build",
+    "build": "npm --prefix modules/Kivowiki-Mods-quick-tools run build",
     "test": "node --test tests/*.test.js",
     "check": "node scripts/check.js"
   }

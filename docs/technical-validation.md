@@ -17,7 +17,9 @@
 - 快速切换两个模块配置，确认旧 iframe 的消息不会写入新模块。
 - 连续保存设置，关闭窗口后重新打开，确认最后一次有效设置被保留。
 - 配置脚本抛出异常、异步挂载失败或超时，确认界面显示错误并可关闭重试。
-- 点击内置快捷工具“配置”，确认能加载 `modules/quick-tools/src/config.js`，不再显示 `Failed to fetch`。
+- 在 Edge 中打开 quick-tools 配置并修改任意设置，确认不出现 `Cannot read properties of undefined (reading 'catch')`，设置仍能保存。
+- 点击内置快捷工具“配置”，确认能加载 `modules/Kivowiki-Mods-quick-tools/src/config.js`，不再显示 `Failed to fetch`。
+- 在配置中心确认“已安装模块”列表显示 `Kivowiki-Mods-quick-tools`，并确认 `options.html` 与 `popup.html` 不再请求不存在的 `modules/quick-tools/src/index.js`。
 - 在桌面和窄屏窗口检查健康概况、模块标识、折叠详情、安装确认、日志和历史版本弹窗没有重叠或溢出。
 - 分别从 GitHub 与 GitLab 公开仓库导入模块和依赖，确认默认分支下载后进入相同预检；私有仓库、非 HTTPS 与非仓库链接应失败。
 
@@ -81,7 +83,8 @@
 
 ## quick-tools 回归
 
-- 默认状态下角色图鉴按钮固定显示在返回顶部按钮上方；点击后应触发站内 `role="menuitem"` 的“角色图鉴”，出现 KivoWiki 原生图鉴窗口和“搜索角色”输入框。
+- 默认状态下角色图鉴按钮固定显示在返回顶部按钮上方；点击后应优先触发顶部菜单内部的 `.n-a` 文字链接。若顶部入口尚未渲染或未响应，再兼容侧边栏或主页“拿起角色图鉴”入口，出现 KivoWiki 原生图鉴窗口和“搜索角色”输入框。
 - 点击图鉴按钮时模块不得创建自己的图鉴面板，也不得自行请求 `/api/v1/data/students`；筛选、分页和资料跳转全部由站内功能负责。
 - 夜间模式下检查 `/data/character/108`：只将黑色地形 PNG 转为浅色，不反转旁边彩色评级 WebP。
 - 夜间模式下检查 `/contact`：标题、列表、引用、链接和按钮文本均具备足够对比度。
+- 夜间模式切换后立即检查正文文字、Naive UI 图标和导航颜色，确认没有约 0.2 至 0.3 秒的颜色渐变延迟；按钮悬浮等后续交互动画仍可正常使用。

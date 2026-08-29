@@ -90,7 +90,7 @@
     background: rgba(17, 24, 32, .96) !important;
     border-color: var(--kq-border) !important;
     box-shadow: 0 1px 0 var(--kq-border), 0 8px 24px rgba(0, 0, 0, .16) !important;
-    transition: background-color .2s ease, box-shadow .2s ease !important;
+    transition: none !important;
   }
   :root.kplus-night-mode.kq-route-home.kq-home-top .n-layout-header {
     background: linear-gradient(rgba(0, 0, 0, .76) 0%, rgba(0, 0, 0, 0) 100%) !important;
@@ -490,9 +490,6 @@
   :root.kplus-night-mode .n-loading-bar-container { z-index: 2147483640 !important; }
   :root.kplus-night-mode .n-loading-bar { background: var(--kq-primary) !important; }
 
-  @media (prefers-reduced-motion: reduce) {
-    :root.kplus-night-mode .n-layout-header { transition: none !important; }
-  }
 `;
 
   // src/theme/page-state.ts
@@ -562,8 +559,18 @@
     atlas: { label: "\u89D2\u8272\u56FE\u9274", path: "M4 5.5A2.5 2.5 0 0 1 6.5 3H11v17H6.5A2.5 2.5 0 0 0 4 22V5.5ZM20 5.5A2.5 2.5 0 0 0 17.5 3H13v17h4.5A2.5 2.5 0 0 1 20 22V5.5Z", title: "\u6253\u5F00\u89D2\u8272\u56FE\u9274" },
     night: { label: "\u591C\u95F4\u6A21\u5F0F", path: "M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z", title: "\u5207\u6362\u591C\u95F4\u6A21\u5F0F" }
   };
-  var EXPAND_PATH = "m18 15-6-6-6 6";
+  var EXPAND_PATH = "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z";
   var CLOSE_PATH = "M18 6 6 18M6 6l12 12";
+  var THEME_SWITCHING_CLASS = "kq-theme-switching";
+  var THEME_SWITCH_STYLE = `
+  :root.${THEME_SWITCHING_CLASS} *,
+  :root.${THEME_SWITCHING_CLASS} *::before,
+  :root.${THEME_SWITCHING_CLASS} *::after {
+    transition: none !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+`;
   var TOOLBAR_STYLE = `
   .kq-toolbar { --kq-size: 46px; --kq-offset: 22px; position: fixed; z-index: 2147483646; display: flex; flex-direction: column; gap: 9px; align-items: center; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   .kq-toolbar[data-position="right-bottom"] { right: var(--kq-offset); bottom: var(--kq-offset); }
@@ -578,7 +585,8 @@
   .kq-toolbar__button:hover { transform: scale(1.055); background: linear-gradient(145deg, #318995, #1e6070); box-shadow: 0 10px 26px rgba(9,28,38,.40), 0 0 0 4px rgba(91,177,190,.12); }
   .kq-toolbar__button:active { transform: scale(.96); }
   .kq-toolbar__button:focus-visible { outline: 3px solid #f5c56b; outline-offset: 3px; }
-  .kq-toolbar__icon { width: 47%; height: 47%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+   .kq-toolbar__icon { width: 47%; height: 47%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+   .kq-toolbar__button--expand .kq-toolbar__icon { fill: currentColor; stroke-width: 1.5; }
   .kq-toolbar__button--secondary { color: #d9e8ee; background: linear-gradient(145deg, #354554, #273541); }
   .kq-toolbar__button--active { color: #fff7df; background: linear-gradient(145deg, #8a6b38, #6b4b26); }
   .kq-toolbar__button--expand { background: #233542; }
@@ -588,8 +596,12 @@
   var mountToolbar = (context) => {
     let settings = normalizeSettings(context.settings);
     let themeSignature = "";
+    let themeSwitchFrame = 0;
+    let atlasRetryTimer = 0;
     const style = document.createElement("style");
     style.textContent = TOOLBAR_STYLE;
+    const themeSwitchStyle = document.createElement("style");
+    themeSwitchStyle.textContent = THEME_SWITCH_STYLE;
     const toolbar = document.createElement("aside");
     toolbar.className = "kq-toolbar";
     toolbar.setAttribute("aria-label", "\u5FEB\u6377\u5DE5\u5177");
@@ -619,6 +631,7 @@
     };
     const expandButton = makeButton("top");
     expandButton.dataset.action = "expand";
+    expandButton.classList.add("kq-toolbar__button--expand");
     expandButton.replaceChildren(createIcon(EXPAND_PATH));
     expandButton.setAttribute("aria-label", "\u5C55\u5F00\u5FEB\u6377\u5DE5\u5177");
     expandButton.setAttribute("aria-controls", menu.id);
@@ -631,14 +644,24 @@
     fixed.className = "kq-toolbar__fixed";
     toolbar.append(menu, expandButton, fixed);
     context.root.append(style, toolbar);
+    document.head.append(themeSwitchStyle);
     const stopObservingPage = observePageState();
     const applyTheme = (enabled) => {
       const signature = `${enabled}:${settings.overlayOpacity}`;
       if (signature !== themeSignature) {
         themeSignature = signature;
+        if (themeSwitchFrame) cancelAnimationFrame(themeSwitchFrame);
+        document.documentElement.classList.add(THEME_SWITCHING_CLASS);
         context.setGlobalStyle(NIGHT_STYLE_ID, enabled ? createNightCss(settings.overlayOpacity) : "");
+        document.documentElement.classList.toggle("kplus-night-mode", enabled);
+        void document.documentElement.offsetWidth;
+        themeSwitchFrame = requestAnimationFrame(() => {
+          themeSwitchFrame = 0;
+          document.documentElement.classList.remove(THEME_SWITCHING_CLASS);
+        });
+      } else {
+        document.documentElement.classList.toggle("kplus-night-mode", enabled);
       }
-      document.documentElement.classList.toggle("kplus-night-mode", enabled);
       nightButton.classList.toggle("kq-toolbar__button--active", enabled);
       nightButton.setAttribute("aria-pressed", String(enabled));
       nightButton.title = enabled ? "\u5173\u95ED\u591C\u95F4\u6A21\u5F0F" : "\u591C\u95F4\u6A21\u5F0F";
@@ -677,15 +700,39 @@
       if (scroller) scroller.scrollTo({ top: 0, behavior: "smooth" });
       else window.scrollTo({ top: 0, behavior: "smooth" });
     });
-    atlasButton.addEventListener("click", () => {
-      const entries = [...document.querySelectorAll('[role="menuitem"]')];
-      const nativeAtlas = entries.find((entry) => entry.textContent?.trim() === "\u89D2\u8272\u56FE\u9274") || entries.find((entry) => entry.textContent?.includes("\u89D2\u8272\u56FE\u9274"));
+    const findNativeAtlasEntries = () => {
+      const selectors = [
+        ".n-menu-item .n-a",
+        ".n-menu-item-content",
+        '[role="menuitem"]',
+        "div.cursor-pointer",
+        "button",
+        "a",
+        '[role="button"]'
+      ];
+      const candidates = selectors.flatMap((selector) => [
+        ...document.querySelectorAll(selector)
+      ]);
+      const exact = (text) => candidates.filter((entry) => entry.textContent?.trim() === text);
+      return [...exact("\u89D2\u8272\u56FE\u9274"), ...exact("\u62FF\u8D77\u89D2\u8272\u56FE\u9274")].filter((entry, index, all) => all.indexOf(entry) === index);
+    };
+    const triggerNativeAtlas = () => {
+      window.clearTimeout(atlasRetryTimer);
+      const nativeAtlas = findNativeAtlasEntries()[0];
       if (!nativeAtlas) {
         context.log?.("warn", "\u672A\u627E\u5230 KivoWiki \u539F\u751F\u89D2\u8272\u56FE\u9274\u5165\u53E3\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u540E\u91CD\u8BD5");
         return;
       }
-      nativeAtlas.click();
-    });
+      const actionable = nativeAtlas.matches("a, button") ? nativeAtlas : nativeAtlas.querySelector("a, button, [role=button]") || nativeAtlas;
+      actionable.click();
+      atlasRetryTimer = window.setTimeout(() => {
+        if (document.querySelector('input[placeholder="\u641C\u7D22\u89D2\u8272"], [aria-label="\u641C\u7D22\u89D2\u8272"]')) return;
+        const fallback = findNativeAtlasEntries().find((entry) => entry.textContent?.trim() === "\u62FF\u8D77\u89D2\u8272\u56FE\u9274");
+        const fallbackAction = fallback?.matches("a, button") ? fallback : fallback?.querySelector("a, button, [role=button]") || fallback;
+        fallbackAction?.click();
+      }, 350);
+    };
+    atlasButton.addEventListener("click", triggerNativeAtlas);
     nightButton.addEventListener("click", () => {
       settings = { ...settings, nightMode: !settings.nightMode };
       render();
@@ -697,9 +744,13 @@
     });
     context.onCleanup(() => {
       stopObservingPage();
+      window.clearTimeout(atlasRetryTimer);
+      if (themeSwitchFrame) cancelAnimationFrame(themeSwitchFrame);
+      document.documentElement.classList.remove(THEME_SWITCHING_CLASS);
       document.documentElement.classList.remove("kplus-night-mode");
       context.setGlobalStyle(NIGHT_STYLE_ID, "");
       style.remove();
+      themeSwitchStyle.remove();
       toolbar.remove();
     });
     render();
@@ -710,11 +761,11 @@
     const module = {
       id: "quick-tools",
       name: "Kivowiki-Mods-quick-tools",
-      version: "2.3.0",
+      version: "2.3.2",
       description: "\u63D0\u4F9B\u53EF\u914D\u7F6E\u7684\u60AC\u6D6E\u5FEB\u6377\u5DE5\u5177\u3001\u6298\u53E0\u89C4\u5219\u548C KivoWiki \u591C\u95F4\u9002\u914D\u3002",
       author: "\u671D\u798AASOGI",
       defaultSettings: DEFAULT_SETTINGS,
-      config: "modules/quick-tools/src/config.js",
+      config: "modules/Kivowiki-Mods-quick-tools/src/config.js",
       mode: "builtin",
       permissions: [
         { id: "page.read", reason: "\u8BFB\u53D6\u6EDA\u52A8\u4F4D\u7F6E\u548C\u5F53\u524D\u9875\u9762\u7ED3\u6784\u3002" },
@@ -724,7 +775,7 @@
       dependencies: {},
       conflicts: {},
       engines: { kivowikiMods: "^1.4.0", api: "^1.1.0" },
-      claims: { globals: [], pageSelectors: ['[role="menuitem"]'], routes: [] },
+      claims: { globals: [], pageSelectors: [".n-menu-item .n-a", ".cursor-pointer"], routes: [] },
       publisher: { id: "kivowiki-mods", name: "Kivowiki-Mods \u5B98\u65B9" },
       source: { registry: "builtin" },
       review: { status: "approved", reviewer: "Kivowiki-Mods", reviewedAt: "2026-08-29" },

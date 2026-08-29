@@ -28,7 +28,7 @@
   "content_scripts": [
     {
       "matches": ["https://kivo.wiki/*", "https://www.kivo.wiki/*"],
-      "js": ["platform.js", "data-client.js", "dependencies/core-runtime/src/index.js", "modules/quick-tools/src/index.js", "content.js"],
+      "js": ["platform.js", "data-client.js", "dependencies/core-runtime/src/index.js", "modules/Kivowiki-Mods-quick-tools/src/index.js", "content.js"],
       "run_at": "document_idle"
     }
   ],

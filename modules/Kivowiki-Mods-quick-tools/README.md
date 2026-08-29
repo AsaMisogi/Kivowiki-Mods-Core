@@ -1,6 +1,6 @@
 # Kivowiki-Mods-quick-tools
 
-这是 Kivowiki-Mods 的官方内置页面增强模块，为 KivoWiki 提供低干扰的悬浮快捷工具和分层夜间主题。模块入口使用 TypeScript 编写，发布时编译为管理器可以直接加载的单文件 JavaScript，不需要把 Vue 或其他运行时注入 Wiki 页面。
+这是 Kivowiki-Mods 的官方内置页面增强模块，为 KivoWiki 提供低干扰的悬浮快捷工具和分层夜间主题。当前版本为 `2.3.2`。模块入口使用 TypeScript 编写，发布时编译为管理器可以直接加载的单文件 JavaScript，不需要把 Vue 或其他运行时注入 Wiki 页面。
 
 ## 目录
 
@@ -26,8 +26,8 @@
 - 夜间样式按 Naive UI 变量、Tailwind 固定色类、业务组件和 Markdown 内容分层处理，保留默认、悬浮、选中、按下与禁用状态。
 - 首页顶部保留黑色渐变和白色导航，滚动后切换为深色表面；SPA 路由变化无需重新挂载模块。
 - 滚动与主题切换不使用高频 DOM 扫描；工具栏只创建一次，设置变化只更新已有节点。
-- `module.json` 使用清单 v4，名称为 `Kivowiki-Mods-quick-tools`；图鉴改为调用站内原生功能，因此不再申请网络权限或依赖 `core-runtime`。
-- 内置模块的配置入口必须使用扩展根目录相对路径；当前入口为 `modules/quick-tools/src/config.js`。
+- `module.json` 使用清单 v4，名称为 `Kivowiki-Mods-quick-tools`；图鉴改为调用站内原生功能，因此不再申请网络权限或依赖 `core-runtime`。版本 `2.3.2` 同步修复配置中心、弹窗和扩展清单中的内置模块路径。
+- 内置模块的配置入口必须使用扩展根目录相对路径；当前入口为 `modules/Kivowiki-Mods-quick-tools/src/config.js`。
 
 ## 设置
 
@@ -39,7 +39,11 @@
 - `offset`：按钮距离窗口边缘的距离，范围 8 至 64 像素。
 - `overlayOpacity`：背景遮罩透明度，范围 0.08 至 0.55。
 
-角色图鉴按钮查找页面中 `role="menuitem"` 且文字为“角色图鉴”的站内菜单项并调用其原生点击事件。窗口、数据、搜索、筛选、分页和资料跳转均由 KivoWiki 自身实现；找不到入口时只写入一条警告日志，不绘制兼容窗口，也不自行请求 API。
+角色图鉴按钮会在点击时查找站内入口，优先触发顶部菜单 `.n-menu-item` 内部的 `.n-a` 文字链接，再兼容侧边栏和主页“拿起角色图鉴”的可点击容器。站点菜单是异步渲染的，因此按钮触发时才查找入口，不在模块启动时缓存节点。窗口、数据、搜索、筛选、分页和资料跳转均由 KivoWiki 自身实现；找不到入口时只写入一条警告日志，不绘制兼容窗口，也不自行请求 API。
+
+主题切换时会临时使用 `kq-theme-switching` 根节点标记关闭站点颜色和图标过渡，并在浏览器提交最终颜色后恢复普通交互动画，因此切换视觉结果立即生效，不会长期禁用悬浮反馈。
+
+配置页保存设置时会返回代表宿主实际保存结果的 Promise。这样配置界面可以安全处理保存失败，不会再出现对 `undefined` 调用 `.catch()` 的 Edge 报错；页面模式模块和严格沙箱模块也使用同一套应答机制，避免“看起来保存成功但实际写入失败”。
 
 夜间模式对角色页的黑色地形 PNG 使用精确的 `alt` 与尺寸类选择器，不改变彩色评级 WebP；联系页则通过 `.n-h`、`.n-ul`、`.n-ol`、`.n-blockquote` 的 Naive UI 变量桥接改善文本对比度。
 
@@ -52,14 +56,14 @@ npm install
 npm run build
 ```
 
-`npm run build` 会更新 `src/index.js` 和 `src/config.js`。开发依赖只用于构建，不属于发布内容；构建完成后可执行 `npm prune --omit=dev` 移除约 32 MiB 的 `node_modules`。当前 `module.json` 声明的全部发布文件约 135 KiB。
+`npm run build` 会更新 `src/index.js` 和 `src/config.js`。开发依赖只用于构建，不属于发布内容；构建完成后可执行 `npm prune --omit=dev` 移除约 32 MiB 的 `node_modules`。当前 `module.json` 声明的全部发布文件约 138 KiB。
 
 当前没有引入 Vue 运行时。Vue 3 + TypeScript 适合复杂、多视图的配置应用，但本模块的页面入口只有两个按钮和一组全局主题状态，Vue 不会减少状态复杂度，反而会把运行时重复注入每个 Wiki 标签页。当前方案使用严格 TypeScript、组件化目录和单 JS 构建，保留完整类型检查且启动成本更低。若未来配置页出现大量可复用表单、拖拽布局或异步数据，可只将独立配置页迁移到 Vue 3，不把 Vue 注入内容页。
 
 推荐的后续扩展目录：
 
 ```text
-quick-tools/
+Kivowiki-Mods-quick-tools/
 ├─ module.json
 ├─ README.md
 └─ src/

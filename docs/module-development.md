@@ -86,7 +86,7 @@
 - `context.root`、`context.document`、`context.window`：当前 KivoWiki 页面对象。
 - `context.site`：当前页面的 `hostname` 与 `pathname`。
 - `context.settings`：该模块的本地设置快照。
-- `context.saveSettings(settings)`：保存该模块设置。
+- `await context.saveSettings(settings)`：异步保存该模块设置；即使宿主采用消息传递，也必须返回可等待的 Promise。
 - `context.onSettingsChange(callback)`：监听设置变化。
 - `context.onCleanup(callback)`：停用或重载前清理资源。
 - `context.storage.get(key)`、`context.storage.set(values)`：访问以模块 ID 隔离的本地存储。
@@ -133,7 +133,7 @@
 
 ### `await context.saveSettings(settings)`
 
-保存当前模块设置。宿主会写入本地 `chrome.storage.local`，并通知其他页面上下文。只能保存本模块的 JSON 兼容数据。
+保存当前模块设置。宿主会写入本地 `chrome.storage.local`，并通知其他页面上下文；Promise 在实际写入完成后 resolve，写入失败时 reject。只能保存本模块的 JSON 兼容数据。
 
 ### `context.onSettingsChange(callback)`
 
@@ -262,7 +262,7 @@
 - `context.id`：模块 ID。
 - `context.site`：当前页面的 `hostname` 与 `pathname` 快照。
 - `context.settings`：模块自己的设置快照。
-- `context.saveSettings(settings)`：异步保存 JSON 兼容设置。
+- `context.saveSettings(settings)`：异步保存 JSON 兼容设置，并返回代表宿主实际保存结果的 Promise；调用方可以用 `await` 或 `.catch()` 处理宿主关闭、通信失败等异常。
 - `context.onSettingsChange(callback)`：接收设置变化。
 - `context.onEvent(callback)`：接收用户点击模块按钮时的 `{ viewId, actionId }`。
 - `context.onCleanup(callback)`：模块停用或重载时清理资源。

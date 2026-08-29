@@ -268,7 +268,11 @@
         try {
           await saveState();
           showToast("配置已保存");
-        } catch (error) { showToast(`配置保存失败：${error.message}`); }
+          runtime.send({ type: "settings-result", requestId: message.requestId, ok: true });
+        } catch (error) {
+          showToast(`配置保存失败：${error.message}`);
+          runtime.send({ type: "settings-result", requestId: message.requestId, ok: false, error: error.message });
+        }
       }
       if (message.type === "asset-get-text") {
         try {

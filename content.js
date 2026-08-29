@@ -286,8 +286,17 @@
         if (target) target.textContent = String(message.text || "").slice(0, 2000);
       }
       if (message.type === "save-settings") {
-        if (!allowed.has("settings")) { writeLog(entry.id, "warn", "permission-denied", "模块尝试保存设置但没有权限"); return; }
-        saveModuleSettings(entry.id, message.settings).catch((error) => notify(`模块“${entry.name}”设置保存失败：${error.message}`));
+        if (!allowed.has("settings")) {
+          writeLog(entry.id, "warn", "permission-denied", "模块尝试保存设置但没有权限");
+          runtime.send({ type: "settings-result", requestId: message.requestId, ok: false, error: "模块未获得设置保存权限" });
+          return;
+        }
+        saveModuleSettings(entry.id, message.settings)
+          .then(() => runtime.send({ type: "settings-result", requestId: message.requestId, ok: true }))
+          .catch((error) => {
+            notify(`模块“${entry.name}”设置保存失败：${error.message}`);
+            runtime.send({ type: "settings-result", requestId: message.requestId, ok: false, error: error.message });
+          });
       }
       if (message.type === "asset-get-text") {
         if (!allowed.has("assets")) { runtime.send({ type: "asset-result", requestId: message.requestId, ok: false, error: "模块未获得资源读取权限" }); return; }
@@ -379,8 +388,17 @@
     if (!entry) return;
     const allowed = new Set(grantedPermissions(entry));
     if (message.type === "save-settings") {
-      if (!allowed.has("settings")) { writeLog(entry.id, "warn", "permission-denied", "模块尝试保存设置但没有权限"); return; }
-      await saveModuleSettings(entry.id, message.settings);
+      if (!allowed.has("settings")) {
+        writeLog(entry.id, "warn", "permission-denied", "模块尝试保存设置但没有权限");
+        runtime.send({ type: "settings-result", requestId: message.requestId, ok: false, error: "模块未获得设置保存权限" });
+        return;
+      }
+      try {
+        await saveModuleSettings(entry.id, message.settings);
+        runtime.send({ type: "settings-result", requestId: message.requestId, ok: true });
+      } catch (error) {
+        runtime.send({ type: "settings-result", requestId: message.requestId, ok: false, error: error.message });
+      }
     }
     if (message.type === "storage-get") {
       if (!allowed.has("storage")) { runtime.send({ type: "storage-result", requestId: message.requestId, ok: false, error: "模块未获得本地数据存储权限" }); return; }

@@ -6,11 +6,11 @@ import type { ModuleContext } from "./types";
   const module = {
     id: "quick-tools",
     name: "Kivowiki-Mods-quick-tools",
-    version: "2.3.0",
+    version: "2.3.2",
     description: "提供可配置的悬浮快捷工具、折叠规则和 KivoWiki 夜间适配。",
     author: "朝禊ASOGI",
     defaultSettings: DEFAULT_SETTINGS,
-    config: "modules/quick-tools/src/config.js",
+    config: "modules/Kivowiki-Mods-quick-tools/src/config.js",
     mode: "builtin",
     permissions: [
       { id: "page.read", reason: "读取滚动位置和当前页面结构。" },
@@ -20,7 +20,7 @@ import type { ModuleContext } from "./types";
     dependencies: {},
     conflicts: {},
     engines: { kivowikiMods: "^1.4.0", api: "^1.1.0" },
-    claims: { globals: [], pageSelectors: ['[role="menuitem"]'], routes: [] },
+    claims: { globals: [], pageSelectors: ['.n-menu-item .n-a', '.cursor-pointer'], routes: [] },
     publisher: { id: "kivowiki-mods", name: "Kivowiki-Mods 官方" },
     source: { registry: "builtin" },
     review: { status: "approved", reviewer: "Kivowiki-Mods", reviewedAt: "2026-08-29" },

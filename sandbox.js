@@ -57,7 +57,7 @@
       active.settingsListeners.forEach((listener) => listener({ ...active.settings }));
       return;
     }
-    if (message.type === "data-result") {
+    if (message.type === "data-result" || message.type === "settings-result") {
       if (active?.token !== message.token) return;
       const request = requests.get(message.requestId);
       if (!request) return;
@@ -131,12 +131,13 @@
            remove(viewId) { send(message.token, { type: "remove", viewId }, isConfig); },
            setText(viewId, target, text) { send(message.token, { type: "set-text", viewId, target, text }, isConfig); }
         },
-         saveSettings(settings) {
-           if (!permissions.has("settings")) throw new Error("模块未获得设置保存权限");
-          active.settings = normalizeSettings(settings);
-          context.settings = { ...active.settings };
-           send(message.token, { type: "save-settings", settings: active.settings }, isConfig);
-        },
+          saveSettings(settings) {
+            if (!permissions.has("settings")) throw new Error("模块未获得设置保存权限");
+            active.settings = normalizeSettings(settings);
+            context.settings = { ...active.settings };
+            // 使用请求应答而不是只发通知，配置页可以安全等待真实保存结果。
+            return requestHost(message.token, { type: "save-settings", settings: active.settings }, isConfig);
+          },
          assets: {
            getText(path) { return permissions.has("assets") ? requestHost(message.token, { type: "asset-get-text", path }, isConfig) : Promise.reject(new Error("模块未获得资源读取权限")); },
            getFile(path) { return permissions.has("assets") ? requestHost(message.token, { type: "asset-get-file", path }, isConfig) : Promise.reject(new Error("模块未获得资源读取权限")); }

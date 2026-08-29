@@ -66,7 +66,7 @@ export const createNightCss = (opacity: number): string => `
     background: rgba(17, 24, 32, .96) !important;
     border-color: var(--kq-border) !important;
     box-shadow: 0 1px 0 var(--kq-border), 0 8px 24px rgba(0, 0, 0, .16) !important;
-    transition: background-color .2s ease, box-shadow .2s ease !important;
+    transition: none !important;
   }
   :root.kplus-night-mode.kq-route-home.kq-home-top .n-layout-header {
     background: linear-gradient(rgba(0, 0, 0, .76) 0%, rgba(0, 0, 0, 0) 100%) !important;
@@ -466,7 +466,4 @@ export const createNightCss = (opacity: number): string => `
   :root.kplus-night-mode .n-loading-bar-container { z-index: 2147483640 !important; }
   :root.kplus-night-mode .n-loading-bar { background: var(--kq-primary) !important; }
 
-  @media (prefers-reduced-motion: reduce) {
-    :root.kplus-night-mode .n-layout-header { transition: none !important; }
-  }
 `;
