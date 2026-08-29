@@ -1,0 +1,9 @@
+node_modules/
+modules/*/node_modules/
+.playwright-mcp/
+*.zip
+*.crx
+*.pem
+.env
+.env.*
+release/

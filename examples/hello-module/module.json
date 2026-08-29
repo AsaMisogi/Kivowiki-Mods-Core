@@ -1,0 +1,27 @@
+{
+  "id": "hello-module",
+  "name": "Kivowiki-Mods-hello-module",
+  "version": "1.2.0",
+  "description": "展示模块入口、配置页、样式、事件清理和本地设置。",
+  "author": "朝禊ASOGI",
+  "manifestVersion": 4,
+  "type": "module",
+  "mode": "page",
+  "entry": "src/index.js",
+  "config": "src/config.js",
+  "permissions": [
+    { "id": "page.read", "reason": "读取当前页面地址并显示示例面板。" },
+    { "id": "page.modify", "reason": "在页面中挂载示例面板和样式。" },
+    { "id": "storage", "reason": "保存示例点击次数。" },
+    { "id": "settings", "reason": "保存模块配置。" },
+    { "id": "assets", "reason": "读取包内的 src/styles.css。" }
+  ],
+  "dependencies": {},
+  "optionalDependencies": {},
+  "conflicts": {},
+  "engines": { "kivowikiMods": "^1.4.0", "api": "^1.1.0" },
+  "claims": { "globals": [], "pageSelectors": [".kivo-example-panel"], "routes": [] },
+  "publisher": { "id": "example-publisher", "name": "示例发布者" },
+  "source": { "registry": "local-example" },
+  "files": ["module.json", "README.md", "src/index.js", "src/config.js", "src/styles.css"]
+}

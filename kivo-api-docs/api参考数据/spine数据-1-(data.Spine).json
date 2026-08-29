@@ -1,0 +1,10 @@
+{
+    "atlas_file": "spines/NP0260_spr/NP0260_spr.atlas",
+    "images": [
+        "spines/NP0260_spr/NP0260_spr.png"
+    ],
+    "name": "NP0260_spr",
+    "remark": "初始立绘",
+    "skel_file": "spines/NP0260_spr/NP0260_spr.skel",
+    "type": "spr"
+}

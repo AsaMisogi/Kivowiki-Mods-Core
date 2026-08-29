@@ -1,0 +1,19 @@
+.kivo-example-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2147483645;
+  width: min(340px, calc(100vw - 40px));
+  padding: 16px;
+  border: 1px solid #dfe7e8;
+  border-radius: 8px;
+  color: #1c2933;
+  background: #fff;
+  box-shadow: 0 14px 34px rgba(22, 57, 63, .16);
+  font: 14px/1.5 system-ui, sans-serif;
+}
+
+.kivo-example-panel h3 { margin: 0 0 6px; font-size: 15px; }
+.kivo-example-panel p { margin: 0 0 12px; color: #6b7a84; }
+.kivo-example-panel button { border: 0; border-radius: 5px; padding: 7px 10px; color: #fff; background: #1e6870; cursor: pointer; }
+.kivo-example-panel button:hover { background: #164e56; }

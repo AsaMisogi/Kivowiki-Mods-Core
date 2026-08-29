@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kivowiki-Mods 设置</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+           <img class="brand-icon" src="icon.png" alt="Kivowiki-Mods 图标">
+          <div>
+            <p class="eyebrow">KIVOWIKI-MODS</p>
+            <h1>Kivowiki-Mods</h1>
+          </div>
+        </div>
+        <span class="version">v1.4.0</span>
+      </header>
+
+      <main class="content-grid">
+        <section class="intro-block" aria-labelledby="page-title">
+          <div>
+            <p class="section-kicker">古书馆的秘密工房</p>
+            <h2 id="page-title">为古书馆带来无限的可能性</h2>
+            <p class="intro-copy">Kivowiki-Mods 是为 <a href="https://kivo.wiki/" target="_blank" rel="noreferrer">基沃托斯古书馆</a> 提供功能模块的本地管理器。</p>
+          </div>
+          <div class="project-info">
+            <span>作者：朝禊ASOGI</span>
+            <a href="https://space.bilibili.com/315312" target="_blank" rel="noreferrer">B站空间</a>
+          </div>
+        </section>
+
+        <section class="module-section" aria-labelledby="module-title">
+          <div class="health-strip" aria-label="模块运行概况">
+            <div><strong id="health-running">0</strong><span>可正常运行</span></div>
+            <div><strong id="health-attention">0</strong><span>需要处理</span></div>
+            <div><strong id="health-trusted">0</strong><span>可信来源</span></div>
+            <button id="open-logs" class="health-action" type="button"><span aria-hidden="true">≡</span><span>运行日志</span><strong id="log-count">0</strong></button>
+          </div>
+          <div class="section-heading">
+            <div><p class="section-kicker">模块 <span id="module-count" class="section-count">0</span></p><h2 id="module-title">已安装模块</h2></div>
+            <div class="module-actions">
+              <label class="search-box" for="module-search"><span aria-hidden="true">⌕</span><input id="module-search" type="search" placeholder="搜索模块" autocomplete="off"></label>
+              <button class="outline-button" id="import-button" type="button"><span aria-hidden="true">+</span> 导入</button>
+              <button class="outline-button" id="git-import-module" type="button"><span aria-hidden="true">↗</span> Git 仓库</button>
+              <button class="outline-button" id="check-all-updates" type="button"><span aria-hidden="true">↻</span> 检查更新</button>
+              <button class="outline-button" id="export-all-button" type="button"><span aria-hidden="true">↓</span> 导出社区备份</button>
+              <button class="outline-button" id="export-lockfile" type="button"><span aria-hidden="true">↓</span> 导出锁文件</button>
+              <input id="import-file" type="file" accept="application/json,.json,.zip,application/zip" hidden>
+            </div>
+          </div>
+          <p class="section-note">安装包会先进行权限、签名、来源、依赖和风险预检，确认后才写入当前设备。</p>
+          <div id="module-list" class="module-list" aria-live="polite"></div>
+        </section>
+
+        <section class="module-section dependency-section" aria-labelledby="dependency-title">
+          <div class="section-heading">
+            <div><p class="section-kicker">依赖 <span id="dependency-count" class="section-count">0</span></p><h2 id="dependency-title">共享能力依赖</h2></div>
+            <div class="module-actions">
+              <label class="search-box" for="dependency-search"><span aria-hidden="true">⌕</span><input id="dependency-search" type="search" placeholder="搜索依赖" autocomplete="off"></label>
+              <button class="outline-button" id="import-dependency-button" type="button"><span aria-hidden="true">+</span> 导入依赖</button>
+              <button class="outline-button" id="git-import-dependency" type="button"><span aria-hidden="true">↗</span> Git 仓库</button>
+            </div>
+          </div>
+          <p class="section-note">依赖按“ID + 版本”独立保存；不同模块可以同时使用同一依赖的不同版本，每个模块的实际选择会写入锁文件。</p>
+          <div id="dependency-list" class="module-list" aria-live="polite"></div>
+        </section>
+
+        <section class="security-settings" aria-labelledby="security-title">
+          <div class="security-copy">
+            <p class="section-kicker">运行方式</p>
+            <h2 id="security-title">安全模式</h2>
+            <p>开启后，导入模块将在严格沙箱中运行，不能访问 KivoWiki 页面或网络。</p>
+          </div>
+          <label class="switch security-switch" title="切换安全模式">
+            <input id="safe-mode" type="checkbox" aria-label="安全模式">
+            <span class="switch-track"></span>
+            <span class="switch-label" id="safe-mode-label">关闭</span>
+          </label>
+        </section>
+
+        <section class="security-settings" aria-labelledby="isolation-title">
+          <div class="security-copy">
+            <p class="section-kicker">故障保护</p>
+            <h2 id="isolation-title">崩溃自动隔离</h2>
+            <p>模块在 5 分钟内连续失败 3 次后自动阻止其再次启动，其他模块和 Wiki 页面不受影响。</p>
+          </div>
+          <label class="switch security-switch" title="切换崩溃自动隔离">
+            <input id="crash-isolation" type="checkbox" aria-label="崩溃自动隔离">
+            <span class="switch-track"></span>
+            <span class="switch-label" id="crash-isolation-label">已开启</span>
+          </label>
+        </section>
+
+        <section class="site-info" aria-labelledby="site-title">
+          <div>
+            <p class="section-kicker">服务对象</p>
+            <h2 id="site-title">基沃托斯古书馆 KivoWiki</h2>
+            <p>模块仅匹配 <code>https://kivo.wiki/</code> 和 <code>https://www.kivo.wiki/</code> 页面。</p>
+          </div>
+          <a class="site-link" href="https://kivo.wiki/" target="_blank" rel="noreferrer">访问 KivoWiki <span aria-hidden="true">↗</span></a>
+        </section>
+      </main>
+      <footer class="footer"><span>© 朝禊ASOGI</span><span>Kivowiki-Mods</span></footer>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="config-modal" class="config-modal" hidden>
+      <div class="config-backdrop" data-config-close></div>
+      <section class="config-dialog" role="dialog" aria-modal="true" aria-labelledby="config-title">
+        <header class="config-dialog-header"><h2 id="config-title">模块配置</h2><button id="config-close" class="icon-button" type="button" title="关闭配置" aria-label="关闭配置">×</button></header>
+          <div class="config-frame-wrap"><p id="config-loading" class="config-loading">正在加载模块配置</p><iframe id="config-frame" title="模块配置页面" hidden></iframe></div>
+      </section>
+    </div>
+    <div id="install-modal" class="config-modal" hidden>
+      <div class="config-backdrop" data-install-close></div>
+      <section class="config-dialog review-dialog" role="dialog" aria-modal="true" aria-labelledby="install-title">
+        <header class="config-dialog-header"><div><p class="section-kicker">安装前安全确认</p><h2 id="install-title">检查模块</h2></div><button data-install-close class="icon-button" type="button" title="取消安装" aria-label="取消安装">×</button></header>
+        <div id="install-review" class="review-content"></div>
+        <footer class="dialog-actions"><button data-install-close class="outline-button" type="button">取消</button><button id="confirm-install" class="primary-button" type="button">确认并安装</button></footer>
+      </section>
+    </div>
+    <div id="panel-modal" class="config-modal" hidden>
+      <div class="config-backdrop" data-panel-close></div>
+      <section class="config-dialog panel-dialog" role="dialog" aria-modal="true" aria-labelledby="panel-title">
+        <header class="config-dialog-header"><h2 id="panel-title">运行日志</h2><button data-panel-close class="icon-button" type="button" title="关闭" aria-label="关闭">×</button></header>
+        <div class="panel-toolbar"><select id="log-filter" aria-label="筛选日志级别"><option value="">全部级别</option><option value="error">错误</option><option value="warn">警告</option><option value="info">信息</option></select><button id="clear-logs" class="text-button" type="button">清空日志</button></div>
+        <div id="panel-content" class="panel-content"></div>
+      </section>
+    </div>
+    <div id="repository-modal" class="config-modal" hidden>
+      <div class="config-backdrop" data-repository-close></div>
+      <section class="config-dialog repository-dialog" role="dialog" aria-modal="true" aria-labelledby="repository-title">
+        <header class="config-dialog-header"><div><p class="section-kicker">远程导入</p><h2 id="repository-title">从 Git 仓库导入</h2></div><button data-repository-close class="icon-button" type="button" title="关闭" aria-label="关闭">×</button></header>
+        <form id="repository-form" class="repository-form">
+          <label for="repository-url">仓库链接</label>
+          <input id="repository-url" type="url" required autocomplete="url" placeholder="https://github.com/owner/repository">
+          <p>支持公开 GitHub 与 GitLab 仓库页。下载默认分支后仍会执行完整的本地安装预检。</p>
+          <div class="dialog-actions"><button data-repository-close class="outline-button" type="button">取消</button><button id="repository-submit" class="primary-button" type="submit">下载并预检</button></div>
+        </form>
+      </section>
+    </div>
+    <script src="platform.js"></script>
+    <script src="data-client.js"></script>
+    <script src="dependencies/core-runtime/src/index.js"></script>
+    <script src="modules/quick-tools/src/index.js"></script>
+    <script src="module-store.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

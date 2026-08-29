@@ -1,0 +1,24 @@
+{
+  "id": "core-runtime",
+  "name": "Kivowiki-Mods-core-runtime",
+  "version": "1.1.0",
+  "description": "提供共享只读请求、KivoWiki API 查询、缓存与资源地址规范化能力。",
+  "author": "朝禊ASOGI",
+  "manifestVersion": 4,
+  "type": "dependency",
+  "scoped": true,
+  "entry": "src/index.js",
+  "permissions": [],
+  "dependencies": {},
+  "exports": {
+    "request": "function",
+    "listAll": "function",
+    "clearCache": "function",
+    "resourceUrl": "function",
+    "kivoApi": "object"
+  },
+  "claims": { "globals": [], "pageSelectors": [], "routes": [] },
+  "engines": { "kivowikiMods": "^1.4.0", "api": "^1.1.0" },
+  "source": { "registry": "builtin" },
+  "review": { "status": "approved", "reviewer": "Kivowiki-Mods", "reviewedAt": "2026-08-29" }
+}

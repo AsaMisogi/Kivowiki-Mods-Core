@@ -1,0 +1,98 @@
+{
+    "categorys": [
+        {
+            "images": [
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS投稿图/SNS_Post_Image_001.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS投稿图/SNS_Post_Image_002.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS投稿图/SNS_Post_Image_003.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS投稿图/SNS_Post_Image_004.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS投稿图/SNS_Post_Image_005.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS投稿图/SNS_Post_Image_006.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS投稿图/SNS_Post_Image_007.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS投稿图/SNS_Post_Image_008.png",
+                    "introduction": ""
+                }
+            ],
+            "introduction": "",
+            "name": "SNS投稿图"
+        },
+        {
+            "images": [
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_001.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_003.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_004.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_005.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_006.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_007.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_008.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_009.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_010.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_011.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_012.png",
+                    "introduction": ""
+                },
+                {
+                    "image": "images/gallery/A3.2.SNS画廊/SNS用户头像/SNS_Profile_Icon_013.png",
+                    "introduction": ""
+                }
+            ],
+            "introduction": "",
+            "name": "SNS用户头像"
+        }
+    ],
+    "introduction": "本画廊记录主线剧情第2部出现的SNS投稿图片和用户头像。",
+    "title": "A3.2.SNS画廊"
+}

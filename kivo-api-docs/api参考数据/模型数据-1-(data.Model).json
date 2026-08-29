@@ -1,0 +1,9 @@
+{
+    "model_file": "models/CH0369_Halo/CH0369_Halo.obj",
+    "mtl_file": "",
+    "name": "CH0369_Halo",
+    "texture": [
+        "models/CH0369_Halo/CH0369_Halo.png"
+    ],
+    "type": "halo"
+}
