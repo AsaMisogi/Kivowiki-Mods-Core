@@ -30,6 +30,26 @@
   const repositoryModal = document.getElementById("repository-modal");
   const repositoryUrl = document.getElementById("repository-url");
   const repositorySubmit = document.getElementById("repository-submit");
+  const marketSearchInput = document.getElementById("market-search");
+  const marketTypeInput = document.getElementById("market-type");
+  const marketSortInput = document.getElementById("market-sort");
+  const marketSearchButton = document.getElementById("market-search-button");
+  const marketRefreshButton = document.getElementById("market-refresh-button");
+  const marketPrevButton = document.getElementById("market-prev");
+  const marketNextButton = document.getElementById("market-next");
+  const marketPageLabel = document.getElementById("market-page-label");
+  const marketSourceUrl = document.getElementById("market-source-url");
+  const marketSourceAdd = document.getElementById("market-source-add");
+  const marketSourceList = document.getElementById("market-source-list");
+  const marketResults = document.getElementById("market-results");
+  const recommendationSection = document.getElementById("recommendation-section");
+  const recommendationList = document.getElementById("recommendation-list");
+  const folderInput = document.getElementById("import-folder");
+  const dependencyFolderButton = document.getElementById("import-dependency-folder-button");
+  const managerTabVisibleInput = document.getElementById("manager-tab-visible");
+  const managerTabVisibleLabel = document.getElementById("manager-tab-visible-label");
+  const marketAutoLoadInput = document.getElementById("market-auto-load");
+  const marketAutoLoadLabel = document.getElementById("market-auto-load-label");
   let state = { modules: {}, imported: [], dependencies: [], preferences: {}, lockfile: null };
   let runtimeLogs = [];
   let pendingInspection = null;
@@ -38,6 +58,10 @@
   let configRuntime = null;
   let saveQueue = Promise.resolve();
   let importTarget = "module";
+  let marketRequestId = 0;
+  let marketPage = 1;
+  let marketTotalPages = 1;
+  let marketHasLoaded = false;
 
   const showToast = (message) => {
     toast.textContent = message;
@@ -92,6 +116,186 @@
   };
   const closeRepository = () => { repositoryModal.hidden = true; repositoryUrl.value = ""; repositorySubmit.disabled = false; };
 
+  const requestOptionalHostPermission = async (url) => {
+    const parsed = new URL(url);
+    const origin = `${parsed.protocol}//${parsed.hostname}/*`;
+    if (chrome.permissions?.contains && await chrome.permissions.contains({ origins: [origin] })) return true;
+    if (!chrome.permissions?.request) return false;
+    return chrome.permissions.request({ origins: [origin] });
+  };
+  const hasOptionalHostPermission = async (url) => {
+    try {
+      const parsed = new URL(url);
+      const origin = `${parsed.protocol}//${parsed.hostname}/*`;
+      return chrome.permissions?.contains ? chrome.permissions.contains({ origins: [origin] }) : false;
+    } catch { return false; }
+  };
+
+  const normalizeMarketItems = (value, sourceUrl) => {
+    const raw = Array.isArray(value) ? value : Array.isArray(value?.items) ? value.items : [];
+    return raw.slice(0, 200).map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const repository = typeof item.repository === "string" && /^https:\/\/(?:www\.)?(?:github\.com|gitlab\.com)\//i.test(item.repository) ? item.repository : "";
+      const packageUrl = typeof item.packageUrl === "string" && /^https:\/\//i.test(item.packageUrl) ? item.packageUrl : "";
+      if (!item.id || !item.name || !item.version || !item.type || (!repository && !packageUrl)) return null;
+      return {
+        id: String(item.id).slice(0, 49), name: String(item.name).slice(0, 100), version: String(item.version).slice(0, 30),
+        type: item.type === "dependency" ? "dependency" : item.type === "module" ? "module" : null, description: String(item.description || "暂无描述").slice(0, 300),
+        author: String(item.author || "未知作者").slice(0, 100), repository, packageUrl, packagePath: String(item.packagePath || "").slice(0, 300), sourceUrl,
+        stars: Number(item.stars) || 0, downloadCount: Number(item.downloadCount) || 0, createdAt: String(item.createdAt || ""), updatedAt: String(item.updatedAt || "")
+      };
+    }).filter(Boolean);
+  };
+
+  const renderMarketItems = (items, title = "搜索结果") => {
+    if (!items.length) { marketResults.replaceChildren(textNode("div", "empty-state", "没有找到匹配的公开包。请换个关键词或检查自定义源格式。")); return; }
+    marketResults.replaceChildren(textNode("p", "market-result-label", `${title} · ${items.length} 个结果`), ...items.map((item) => {
+      const card = document.createElement("article"); card.className = "market-card";
+      const info = document.createElement("div"); info.className = "market-card-info";
+      const titleRow = document.createElement("div"); titleRow.className = "module-title-row";
+      titleRow.append(textNode("h3", "", item.name), textNode("span", "module-version", `v${item.version}`), textNode("span", "status-badge badge-info", item.type === "dependency" ? "依赖" : item.type === "module" ? "模块" : "类型待确认"));
+      const stats = [item.updatedAt && `更新 ${new Date(item.updatedAt).toLocaleDateString("zh-CN")}`, item.createdAt && `发布 ${new Date(item.createdAt).toLocaleDateString("zh-CN")}`, `Star ${Number(item.stars || 0).toLocaleString("zh-CN")}`, item.downloadCount != null && item.downloadCount > 0 ? `下载 ${Number(item.downloadCount).toLocaleString("zh-CN")}` : "下载暂无数据"].filter(Boolean).join(" · ");
+      info.append(titleRow, textNode("p", "module-description", item.description), textNode("p", "module-meta", `作者：${item.author}${stats ? ` · ${stats}` : ""}`));
+      const actions = document.createElement("div"); actions.className = "market-card-actions";
+      const action = document.createElement("button"); action.type = "button"; action.className = "primary-button"; action.textContent = "安装";
+      action.addEventListener("click", async () => {
+        action.disabled = true;
+        try {
+          if (item.packageUrl && !await requestOptionalHostPermission(item.packageUrl)) throw new Error("未获得访问该来源的浏览器权限");
+          const file = item.packageUrl ? await KivowikiModsStore.fetchPackageUrl(item.packageUrl, { registry: item.sourceUrl || "market" }) : await KivowikiModsStore.fetchRepositoryPackage(item.repository, item.packagePath || "");
+          await inspectImportFile(file, item.type || marketTypeInput.value || null);
+        } catch (error) { showToast(`市场安装失败：${error.message}`); action.disabled = false; }
+      });
+      actions.append(action);
+      if (item.repository) {
+        const link = document.createElement("a"); link.className = "outline-button market-repository-link"; link.href = item.repository; link.target = "_blank"; link.rel = "noreferrer"; link.textContent = "查看仓库";
+        actions.append(link);
+      }
+      card.append(info, actions); return card;
+    }));
+  };
+
+  const sortMarketItems = (items, sort) => items.slice().sort((left, right) => {
+    if (sort === "stars") return Number(right.stars || 0) - Number(left.stars || 0);
+    if (sort === "downloads") return Number(right.downloadCount || 0) - Number(left.downloadCount || 0);
+    if (sort === "published") return String(right.createdAt || "").localeCompare(String(left.createdAt || ""));
+    return String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
+  });
+
+  const searchMarket = async ({ force = false, page = 1 } = {}) => {
+    const query = marketSearchInput.value.trim();
+    if (!query && !force) { showToast("请输入搜索关键词，或点击刷新查看社区项目"); marketSearchInput.focus(); return; }
+    const requestId = ++marketRequestId;
+    marketSearchButton.disabled = true;
+    marketRefreshButton.disabled = true;
+    marketResults.replaceChildren(textNode("div", "empty-state", "正在读取公开市场信息……"));
+    try {
+      const github = await KivowikiModsStore.discoverGitHubPackages({ query, type: marketTypeInput.value, sort: marketSortInput.value, page, limit: 12, refresh: force });
+      const custom = [];
+      for (const source of page === 1 ? (state.preferences?.marketSources || []) : []) {
+        try {
+          if (!await hasOptionalHostPermission(source)) continue;
+          const result = await KivowikiModsStore.fetchRemoteJson(source);
+          custom.push(...normalizeMarketItems(result.data, result.url));
+        } catch (error) { console.warn("自定义市场源读取失败", source, error); }
+      }
+      if (requestId !== marketRequestId) return;
+      const normalizedQuery = query.toLocaleLowerCase();
+      const filtered = sortMarketItems([...custom, ...github.items].filter((item) => {
+        const matchesQuery = `${item.name} ${item.id} ${item.description} ${item.author}`.toLocaleLowerCase().includes(normalizedQuery);
+        return (!normalizedQuery || matchesQuery) && (!marketTypeInput.value || item.type === marketTypeInput.value || item.type == null);
+      }), marketSortInput.value);
+      marketPage = page;
+      marketTotalPages = github.totalPages || 1;
+      marketHasLoaded = true;
+      marketPageLabel.textContent = `第 ${marketPage} / ${marketTotalPages} 页`;
+      marketPrevButton.disabled = marketPage <= 1;
+      marketNextButton.disabled = marketPage >= marketTotalPages;
+      renderMarketItems(filtered, query ? "市场搜索" : "社区项目");
+    } catch (error) { marketResults.replaceChildren(textNode("div", "empty-state", `市场搜索失败：${error.message}`)); }
+    finally { marketSearchButton.disabled = false; marketRefreshButton.disabled = false; }
+  };
+
+  const autoLoadMarket = async () => {
+    if (marketHasLoaded || state.preferences?.marketAutoLoad === false) return;
+    marketSearchInput.value = "";
+    const requestId = ++marketRequestId;
+    marketSearchButton.disabled = true;
+    marketRefreshButton.disabled = true;
+    marketResults.replaceChildren(textNode("div", "empty-state", "正在验证 GitHub 社区项目……"));
+    try {
+      const result = await KivowikiModsStore.discoverGitHubPackages({ type: marketTypeInput.value, sort: marketSortInput.value, page: 1, limit: 12 });
+      const custom = [];
+      for (const source of state.preferences?.marketSources || []) {
+        try {
+          if (!await hasOptionalHostPermission(source)) continue;
+          const sourceResult = await KivowikiModsStore.fetchRemoteJson(source);
+          custom.push(...normalizeMarketItems(sourceResult.data, sourceResult.url));
+        } catch (error) { console.warn("自定义市场源读取失败", source, error); }
+      }
+      if (requestId !== marketRequestId) return;
+      marketPage = 1; marketTotalPages = result.totalPages || 1; marketHasLoaded = true;
+      marketPageLabel.textContent = `第 1 / ${marketTotalPages} 页`; marketPrevButton.disabled = true; marketNextButton.disabled = marketTotalPages <= 1;
+      renderMarketItems(sortMarketItems([...custom, ...result.items], marketSortInput.value), "社区项目");
+    } catch (error) { marketResults.replaceChildren(textNode("div", "empty-state", `市场加载失败：${error.message}`)); }
+    finally { marketSearchButton.disabled = false; marketRefreshButton.disabled = false; }
+  };
+
+  const renderSources = () => {
+    const sources = state.preferences?.marketSources || [];
+    marketSourceList.hidden = !sources.length;
+    if (!sources.length) marketSourceList.replaceChildren(textNode("p", "empty-source", "尚未添加自定义源。"));
+    if (sources.length) marketSourceList.replaceChildren(...sources.map((source) => {
+      const row = document.createElement("div");
+      row.className = "source-row";
+      row.append(textNode("span", "", source));
+      const remove = document.createElement("button");
+      remove.className = "text-button remove-button";
+      remove.type = "button";
+      remove.textContent = "移除";
+      remove.addEventListener("click", async () => {
+        state.preferences.marketSources = sources.filter((item) => item !== source);
+        await saveState();
+        renderSources();
+        showToast("自定义源已移除");
+      });
+      row.append(remove);
+      return row;
+    }));
+  };
+
+  const renderRecommendations = () => {
+    const recommendations = Array.isArray(globalThis.KivowikiModsRecommendations)
+      ? globalThis.KivowikiModsRecommendations.filter((item) => item && item.title && item.description)
+      : [];
+    recommendationSection.hidden = !recommendations.length;
+    recommendationList.replaceChildren(...recommendations.map((item) => {
+      const card = document.createElement("article");
+      card.className = "recommendation-card";
+      const info = document.createElement("div");
+      info.append(textNode("h4", "", item.title), textNode("p", "", item.description));
+      const source = item.repository || item.packageUrl;
+      if (source) {
+        const button = document.createElement("button");
+        button.className = "outline-button";
+        button.type = "button";
+        button.textContent = "安装";
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          try {
+            if (item.packageUrl && !await requestOptionalHostPermission(source)) throw new Error("未获得访问该来源的浏览器权限");
+            const file = item.packageUrl
+              ? await KivowikiModsStore.fetchPackageUrl(item.packageUrl, { registry: "recommendations" })
+              : await KivowikiModsStore.fetchRepositoryPackage(item.repository);
+            await inspectImportFile(file, item.type || null);
+          } catch (error) { showToast(`推荐安装失败：${error.message}`); button.disabled = false; }
+        });
+        card.append(info, button);
+      } else card.append(info);
+      return card;
+    }));
+  };
+
   const renderInstallReview = (inspection) => {
     const { manifest, report } = inspection;
     const change = changeLabels[report.change] || "安装";
@@ -143,6 +347,20 @@
     permissionSection.append(permissionList);
     if (!report.permissions.length) permissionList.append(textNode("p", "review-help", "依赖没有独立权限开关。页面模式下它与调用模块处于同一页面环境，仍需确认代码来源；严格沙箱下继续受浏览器隔离限制。"));
 
+    const prerequisites = document.createElement("section");
+    prerequisites.className = "review-section";
+    const requiredDependencies = Object.entries(manifest.dependencies || {});
+    const optionalDependencies = Object.entries(manifest.optionalDependencies || {});
+    prerequisites.append(textNode("h3", "", "前置依赖"));
+    if (!requiredDependencies.length && !optionalDependencies.length) {
+      prerequisites.append(textNode("p", "review-help", "该包没有声明前置依赖。"));
+    } else {
+      prerequisites.append(textNode("p", "review-help", "安装后只有满足版本范围的依赖才会参与运行；缺失依赖不会静默安装。"));
+      [...requiredDependencies.map(([id, range]) => [id, range, false]), ...optionalDependencies.map(([id, range]) => [id, range, true])].forEach(([id, range, optional]) => {
+        prerequisites.append(textNode("div", `prerequisite-item${optional ? " prerequisite-optional" : ""}`, `${id} ${range}${optional ? "（可选）" : "（必需）"}`));
+      });
+    }
+
     const warnings = [
       ...(report.compatibility ? [{ severity: "high", title: "版本不兼容", detail: report.compatibility }] : []),
       ...report.dependencyReasons.map((detail) => ({ severity: "high", title: "依赖或冲突问题", detail })),
@@ -162,7 +380,7 @@
     if (report.signature.status === "invalid") audit.append(textNode("p", "advisory-notice", "签名异常仅作为风险提示；仍可由你自行决定安装。"));
     if (report.compatibility || report.dependencyReasons.length) audit.append(textNode("p", "advisory-notice", "可以继续安装，但相关条件满足前，管理器会暂缓运行此模块或受影响模块。"));
     audit.append(textNode("p", "risk-notice", "第三方模块由其作者提供。管理器仅展示检查结果并实施能力边界，不保证模块安全性、真实性或可用性；继续安装表示你愿意自行承担使用风险。"));
-    installReview.replaceChildren(summary, identity, permissionSection, audit);
+    installReview.replaceChildren(summary, identity, prerequisites, permissionSection, audit);
     installModal.hidden = false;
   };
 
@@ -385,6 +603,10 @@
     safeModeLabel.textContent = safeModeInput.checked ? "已开启" : "关闭";
     crashIsolationInput.checked = state.preferences?.crashIsolation !== false;
     crashIsolationLabel.textContent = crashIsolationInput.checked ? "已开启" : "关闭";
+    managerTabVisibleInput.checked = state.preferences?.managerTabVisible !== false;
+    managerTabVisibleLabel.textContent = managerTabVisibleInput.checked ? "已显示" : "已隐藏";
+    marketAutoLoadInput.checked = state.preferences?.marketAutoLoad !== false;
+    marketAutoLoadLabel.textContent = marketAutoLoadInput.checked ? "已开启" : "已关闭";
     const query = searchInput.value.trim().toLocaleLowerCase();
     const dependencyQuery = dependencySearchInput.value.trim().toLocaleLowerCase();
     const allDependencies = [
@@ -399,6 +621,8 @@
     const installedDependencies = allDependencies.filter((dependency) => !dependencyQuery || `${dependency.name} ${dependency.id}`.toLocaleLowerCase().includes(dependencyQuery));
     moduleCount.textContent = `${installedModules.length}`;
     dependencyCount.textContent = `${installedDependencies.length}`;
+    document.getElementById("nav-module-count").textContent = `${installedModules.length}`;
+    document.getElementById("nav-dependency-count").textContent = `${installedDependencies.length}`;
     const imported = state.imported || [];
     document.getElementById("health-running").textContent = String(modules.filter((module) => state.modules[module.id]?.enabled !== false).length + imported.filter((module) => resolution.status[module.id]?.runnable).length);
     document.getElementById("health-attention").textContent = String(imported.filter((module) => module.enabled !== false && !resolution.status[module.id]?.runnable).length);
@@ -604,6 +828,9 @@
     state.imported = Array.isArray(state.imported) ? state.imported : [];
     state.dependencies = Array.isArray(state.dependencies) ? state.dependencies : [];
     state.preferences = state.preferences && typeof state.preferences === "object" ? state.preferences : {};
+    state.preferences.marketSources = Array.isArray(state.preferences.marketSources)
+      ? state.preferences.marketSources.filter((item) => typeof item === "string").slice(0, 20)
+      : [];
     state.lockfile = state.lockfile && typeof state.lockfile === "object" ? state.lockfile : null;
     state.preferences.crashIsolation = state.preferences.crashIsolation !== false;
     state.imported = state.imported.map((item) => {
@@ -644,13 +871,17 @@
     rebuildLockfile();
     await saveState();
     render();
+    renderSources();
+    renderRecommendations();
   };
 
   const inspectImportFile = async (file, expectedType = null) => {
     const forbiddenIds = [...modules, ...builtinDependencies].map((item) => item.id);
     const installedDependencies = [...builtinDependencies, ...state.dependencies];
     let inspections;
-    if (/\.zip$/i.test(file.name) || file.type === "application/zip") {
+    if (Array.isArray(file) || (file && typeof file !== "string" && typeof file[Symbol.iterator] === "function" && !(file instanceof Blob))) {
+      inspections = [await KivowikiModsStore.inspectPackage(file, forbiddenIds, state.imported, installedDependencies)];
+    } else if (/\.zip$/i.test(file.name) || file.type === "application/zip") {
       inspections = [await KivowikiModsStore.inspectPackage(file, forbiddenIds, state.imported, installedDependencies)];
     } else {
       const raw = JSON.parse(await file.text());
@@ -665,8 +896,16 @@
     reviewNextInstallation();
   };
 
+  const inspectImportFolder = async (files, expectedType = null) => {
+    if (!files?.length) return;
+    try { await inspectImportFile(files, expectedType); }
+    catch (error) { showToast(`文件夹导入失败：${error.message}`); }
+  };
+
   document.getElementById("import-button").addEventListener("click", () => { importTarget = "module"; document.getElementById("import-file").click(); });
   document.getElementById("import-dependency-button").addEventListener("click", () => { importTarget = "dependency"; document.getElementById("import-file").click(); });
+  document.getElementById("import-folder-button").addEventListener("click", () => { importTarget = "module"; folderInput.click(); });
+  dependencyFolderButton.addEventListener("click", () => { importTarget = "dependency"; folderInput.click(); });
   document.getElementById("import-file").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -674,12 +913,12 @@
     try { await inspectImportFile(file, importTarget); }
     catch (error) { showToast(`导入失败：${error.message}`); }
   });
-  document.getElementById("export-all-button").addEventListener("click", () => exportModules(state.imported).catch((error) => showToast(`导出失败：${error.message}`)));
-  document.getElementById("export-lockfile").addEventListener("click", () => {
-    rebuildLockfile();
-    downloadJson("kivowiki-mods.lock.json", state.lockfile);
-    showToast("依赖锁文件已导出");
+  folderInput.addEventListener("change", async (event) => {
+    const files = [...(event.target.files || [])];
+    event.target.value = "";
+    await inspectImportFolder(files, importTarget);
   });
+  document.getElementById("export-all-button").addEventListener("click", () => exportModules(state.imported).catch((error) => showToast(`导出失败：${error.message}`)));
   document.getElementById("check-all-updates").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -702,6 +941,24 @@
   });
   searchInput.addEventListener("input", render);
   dependencySearchInput.addEventListener("input", render);
+  document.querySelectorAll("[data-tab-target]").forEach((button) => button.addEventListener("click", () => {
+    const target = button.dataset.tabTarget;
+    document.querySelectorAll("[data-tab-target]").forEach((item) => { const active = item === button; item.classList.toggle("is-active", active); item.setAttribute("aria-selected", String(active)); });
+    document.querySelectorAll("[data-tab-panel]").forEach((panel) => { panel.hidden = panel.dataset.tabPanel !== target; });
+    if (target === "market") autoLoadMarket();
+  }));
+  managerTabVisibleInput.addEventListener("change", async () => {
+    state.preferences = { ...(state.preferences || {}), managerTabVisible: managerTabVisibleInput.checked };
+    managerTabVisibleLabel.textContent = managerTabVisibleInput.checked ? "已显示" : "已隐藏";
+    await saveState();
+    showToast(managerTabVisibleInput.checked ? "页面侧边入口已显示" : "页面侧边入口已隐藏");
+  });
+  marketAutoLoadInput.addEventListener("change", async () => {
+    state.preferences = { ...(state.preferences || {}), marketAutoLoad: marketAutoLoadInput.checked };
+    marketAutoLoadLabel.textContent = marketAutoLoadInput.checked ? "已开启" : "已关闭";
+    await saveState();
+    showToast(marketAutoLoadInput.checked ? "市场自动加载已开启" : "市场自动加载已关闭");
+  });
   safeModeInput.addEventListener("change", async () => { state.preferences = { ...(state.preferences || {}), safeMode: safeModeInput.checked }; await saveState(); render(); showToast(safeModeInput.checked ? "安全模式已开启" : "安全模式已关闭"); });
   crashIsolationInput.addEventListener("change", async () => { state.preferences = { ...(state.preferences || {}), crashIsolation: crashIsolationInput.checked }; await saveState(); render(); showToast(crashIsolationInput.checked ? "崩溃自动隔离已开启" : "崩溃自动隔离已关闭"); });
   confirmInstallButton.addEventListener("click", async () => {
@@ -744,6 +1001,29 @@
   document.getElementById("open-logs").addEventListener("click", openLogs);
   logFilter.addEventListener("change", renderLogs);
   document.getElementById("clear-logs").addEventListener("click", async () => { runtimeLogs = []; await chrome.storage.local.set({ runtimeLogs: [] }); renderLogs(); render(); showToast("运行日志已清空"); });
+  marketSearchButton.addEventListener("click", searchMarket);
+  marketRefreshButton.addEventListener("click", () => searchMarket({ force: true, page: 1 }));
+  marketPrevButton.addEventListener("click", () => searchMarket({ force: true, page: Math.max(1, marketPage - 1) }));
+  marketNextButton.addEventListener("click", () => searchMarket({ force: true, page: Math.min(marketTotalPages, marketPage + 1) }));
+  marketSearchInput.addEventListener("keydown", (event) => { if (event.key === "Enter") searchMarket(); });
+  marketSortInput.addEventListener("change", () => { if (marketHasLoaded) searchMarket({ force: true, page: 1 }); });
+  marketTypeInput.addEventListener("change", () => { if (marketHasLoaded) searchMarket({ force: true, page: 1 }); });
+  marketSourceAdd.addEventListener("click", async () => {
+    const value = marketSourceUrl.value.trim();
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol !== "https:") throw new Error("自定义源只允许 HTTPS");
+      if (!await requestOptionalHostPermission(value)) throw new Error("未获得访问该来源的浏览器权限");
+      await KivowikiModsStore.fetchRemoteJson(value);
+      const sources = new Set(state.preferences?.marketSources || []);
+      sources.add(parsed.href);
+      state.preferences = { ...(state.preferences || {}), marketSources: [...sources].slice(0, 20) };
+      await saveState();
+      marketSourceUrl.value = "";
+      renderSources();
+      await searchMarket({ force: true, page: 1 });
+    } catch (error) { showToast(`添加自定义源失败：${error.message}`); }
+  });
   document.getElementById("config-close").addEventListener("click", closeConfig);
   modal.querySelector("[data-config-close]").addEventListener("click", closeConfig);
   document.addEventListener("keydown", (event) => { if (event.key !== "Escape") return; if (!modal.hidden) closeConfig(); else if (!installModal.hidden) closeInstall(); else if (!repositoryModal.hidden) closeRepository(); else panelModal.hidden = true; });

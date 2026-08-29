@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Kivowiki-Mods",
-  "version": "1.4.0",
+  "version": "1.6.0",
   "description": "为古书馆带来无限的可能性",
   "minimum_chrome_version": "120",
   "permissions": ["storage", "userScripts", "windows"],
   "host_permissions": ["https://kivo.wiki/*", "https://www.kivo.wiki/*", "https://api.kivo.wiki/*", "https://api.github.com/*", "https://codeload.github.com/*", "https://gitlab.com/*"],
+  "optional_host_permissions": ["https://*/*"],
   "background": {
     "service_worker": "background.js"
   },

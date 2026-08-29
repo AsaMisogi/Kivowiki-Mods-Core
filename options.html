@@ -16,7 +16,7 @@
             <h1>Kivowiki-Mods</h1>
           </div>
         </div>
-        <span class="version">v1.4.0</span>
+        <span class="version">v1.6.0</span>
       </header>
 
       <main class="content-grid">
@@ -32,7 +32,42 @@
           </div>
         </section>
 
-        <section class="module-section" aria-labelledby="module-title">
+        <div class="manager-layout">
+          <nav class="side-nav" aria-label="管理器栏目" role="tablist" aria-orientation="vertical">
+            <p class="side-nav-label">管理器</p>
+            <button class="side-nav-item is-active" role="tab" aria-controls="modules-panel" type="button" data-tab-target="modules" aria-selected="true"><span aria-hidden="true">▦</span><span>模块</span><strong id="nav-module-count">0</strong></button>
+            <button class="side-nav-item" role="tab" aria-controls="dependencies-panel" type="button" data-tab-target="dependencies" aria-selected="false"><span aria-hidden="true">◇</span><span>依赖</span><strong id="nav-dependency-count">0</strong></button>
+            <button class="side-nav-item" role="tab" aria-controls="market-panel" type="button" data-tab-target="market" aria-selected="false"><span aria-hidden="true">✦</span><span>市场</span></button>
+            <div class="side-nav-spacer"></div>
+            <button class="side-nav-item" role="tab" aria-controls="settings-panel" type="button" data-tab-target="settings" aria-selected="false"><span aria-hidden="true">⚙</span><span>设置</span></button>
+          </nav>
+          <div class="tab-panels">
+        <section id="market-panel" class="market-section tab-panel" data-tab-panel="market" aria-labelledby="market-title" role="tabpanel" hidden>
+          <div class="section-heading">
+            <div><p class="section-kicker">发现</p><h2 id="market-title">Mod 市场</h2></div>
+            <span class="market-safety-note">只展示公开信息，安装仍需逐项确认</span>
+          </div>
+          <div class="market-toolbar">
+            <label class="search-box market-search" for="market-search"><span aria-hidden="true">⌕</span><input id="market-search" type="search" placeholder="搜索 GitHub 社区仓库" autocomplete="off"></label>
+            <select id="market-type" aria-label="市场包类型"><option value="">模块和依赖</option><option value="module">功能模块</option><option value="dependency">共享依赖</option></select>
+            <select id="market-sort" aria-label="市场排序"><option value="updated">最近更新</option><option value="published">最近发布</option><option value="downloads">下载量</option><option value="stars">Star 数</option></select>
+            <button class="primary-button" id="market-search-button" type="button"><span aria-hidden="true">⌕</span> 搜索</button>
+            <button class="outline-button" id="market-refresh-button" type="button" title="刷新市场目录"><span aria-hidden="true">↻</span> 刷新</button>
+          </div>
+          <p class="section-note">市场会验证仓库中是否存在有效的 Kivowiki-Mods 清单和入口文件，只展示与本管理器兼容的项目。安装前仍会进行完整预检。</p>
+          <div id="market-results" class="market-results" aria-live="polite"><div class="empty-state">点击“刷新”加载经过清单验证的 GitHub 社区项目，或输入关键词搜索。</div></div>
+          <div class="market-pagination" aria-label="市场分页">
+            <button id="market-prev" class="outline-button" type="button" disabled>上一页</button>
+            <span id="market-page-label">第 0 页</span>
+            <button id="market-next" class="outline-button" type="button" disabled>下一页</button>
+          </div>
+          <div id="recommendation-section" class="recommendation-section" hidden>
+            <div class="subsection-heading"><div><p class="section-kicker">编辑精选</p><h3>推荐模块与依赖</h3></div><span class="section-note">由扩展发布者在 recommendations.js 中维护</span></div>
+            <div id="recommendation-list" class="recommendation-list"></div>
+          </div>
+        </section>
+
+        <section id="modules-panel" class="module-section tab-panel" data-tab-panel="modules" aria-labelledby="module-title" role="tabpanel">
           <div class="health-strip" aria-label="模块运行概况">
             <div><strong id="health-running">0</strong><span>可正常运行</span></div>
             <div><strong id="health-attention">0</strong><span>需要处理</span></div>
@@ -43,24 +78,26 @@
             <div><p class="section-kicker">模块 <span id="module-count" class="section-count">0</span></p><h2 id="module-title">已安装模块</h2></div>
             <div class="module-actions">
               <label class="search-box" for="module-search"><span aria-hidden="true">⌕</span><input id="module-search" type="search" placeholder="搜索模块" autocomplete="off"></label>
-              <button class="outline-button" id="import-button" type="button"><span aria-hidden="true">+</span> 导入</button>
+              <button class="outline-button" id="import-button" type="button"><span aria-hidden="true">+</span> 导入文件</button>
+              <button class="outline-button" id="import-folder-button" type="button"><span aria-hidden="true">+</span> 导入文件夹</button>
               <button class="outline-button" id="git-import-module" type="button"><span aria-hidden="true">↗</span> Git 仓库</button>
               <button class="outline-button" id="check-all-updates" type="button"><span aria-hidden="true">↻</span> 检查更新</button>
               <button class="outline-button" id="export-all-button" type="button"><span aria-hidden="true">↓</span> 导出社区备份</button>
-              <button class="outline-button" id="export-lockfile" type="button"><span aria-hidden="true">↓</span> 导出锁文件</button>
               <input id="import-file" type="file" accept="application/json,.json,.zip,application/zip" hidden>
+              <input id="import-folder" type="file" webkitdirectory directory multiple hidden>
             </div>
           </div>
           <p class="section-note">安装包会先进行权限、签名、来源、依赖和风险预检，确认后才写入当前设备。</p>
           <div id="module-list" class="module-list" aria-live="polite"></div>
         </section>
 
-        <section class="module-section dependency-section" aria-labelledby="dependency-title">
+        <section id="dependencies-panel" class="module-section dependency-section tab-panel" data-tab-panel="dependencies" aria-labelledby="dependency-title" role="tabpanel" hidden>
           <div class="section-heading">
             <div><p class="section-kicker">依赖 <span id="dependency-count" class="section-count">0</span></p><h2 id="dependency-title">共享能力依赖</h2></div>
             <div class="module-actions">
               <label class="search-box" for="dependency-search"><span aria-hidden="true">⌕</span><input id="dependency-search" type="search" placeholder="搜索依赖" autocomplete="off"></label>
-              <button class="outline-button" id="import-dependency-button" type="button"><span aria-hidden="true">+</span> 导入依赖</button>
+              <button class="outline-button" id="import-dependency-button" type="button"><span aria-hidden="true">+</span> 导入文件</button>
+              <button class="outline-button" id="import-dependency-folder-button" type="button"><span aria-hidden="true">+</span> 导入文件夹</button>
               <button class="outline-button" id="git-import-dependency" type="button"><span aria-hidden="true">↗</span> Git 仓库</button>
             </div>
           </div>
@@ -68,7 +105,42 @@
           <div id="dependency-list" class="module-list" aria-live="polite"></div>
         </section>
 
-        <section class="security-settings" aria-labelledby="security-title">
+        <section id="settings-panel" class="settings-panel tab-panel" data-tab-panel="settings" aria-labelledby="settings-title" role="tabpanel" hidden>
+          <div class="settings-heading"><p class="section-kicker">偏好设置</p><h2 id="settings-title">管理器设置</h2><p>管理界面、市场来源和模块运行方式都在这里统一管理。</p></div>
+          <section class="security-settings" aria-labelledby="entry-title">
+            <div class="security-copy">
+              <p class="section-kicker">页面入口</p>
+              <h2 id="entry-title">显示侧边插件入口</h2>
+              <p>控制 KivoWiki 页面左侧的 Kivowiki-Mods 图标栏。关闭后不会停用已经安装的模块。</p>
+            </div>
+            <label class="switch security-switch" title="切换侧边插件入口">
+              <input id="manager-tab-visible" type="checkbox" aria-label="显示侧边插件入口">
+              <span class="switch-track"></span>
+              <span class="switch-label" id="manager-tab-visible-label">已显示</span>
+            </label>
+          </section>
+          <section class="security-settings" aria-labelledby="market-auto-title">
+            <div class="security-copy">
+              <p class="section-kicker">市场偏好</p>
+              <h2 id="market-auto-title">进入市场时自动加载</h2>
+              <p>开启后，打开市场标签时自动读取经过验证的 GitHub 社区项目。关闭后只在你主动点击搜索或刷新时请求网络。</p>
+            </div>
+            <label class="switch security-switch" title="切换市场自动加载">
+              <input id="market-auto-load" type="checkbox" aria-label="进入市场时自动加载">
+              <span class="switch-track"></span>
+              <span class="switch-label" id="market-auto-load-label">已开启</span>
+            </label>
+          </section>
+          <section class="settings-block" aria-labelledby="source-settings-title">
+            <div class="settings-block-heading"><div><p class="section-kicker">市场来源</p><h2 id="source-settings-title">自定义源</h2></div><span class="section-note">最多保存 20 个 HTTPS 源</span></div>
+            <p class="section-note">自定义源用于补充 GitHub 搜索。源文件必须符合文档中的 `kivowiki-mods-registry` 格式；首次访问新域名时会请求可撤销的浏览器权限。</p>
+            <div class="source-toolbar">
+              <label class="source-url-field" for="market-source-url"><span>索引地址</span><input id="market-source-url" type="url" placeholder="https://example.com/kivowiki-mods.json" autocomplete="url"></label>
+              <button class="outline-button" id="market-source-add" type="button"><span aria-hidden="true">+</span> 添加源</button>
+            </div>
+            <div id="market-source-list" class="source-list" hidden></div>
+          </section>
+          <section class="security-settings" aria-labelledby="security-title">
           <div class="security-copy">
             <p class="section-kicker">运行方式</p>
             <h2 id="security-title">安全模式</h2>
@@ -79,9 +151,9 @@
             <span class="switch-track"></span>
             <span class="switch-label" id="safe-mode-label">关闭</span>
           </label>
-        </section>
+          </section>
 
-        <section class="security-settings" aria-labelledby="isolation-title">
+          <section class="security-settings" aria-labelledby="isolation-title">
           <div class="security-copy">
             <p class="section-kicker">故障保护</p>
             <h2 id="isolation-title">崩溃自动隔离</h2>
@@ -92,16 +164,19 @@
             <span class="switch-track"></span>
             <span class="switch-label" id="crash-isolation-label">已开启</span>
           </label>
-        </section>
+          </section>
 
-        <section class="site-info" aria-labelledby="site-title">
+          <section class="site-info" aria-labelledby="site-title">
           <div>
             <p class="section-kicker">服务对象</p>
             <h2 id="site-title">基沃托斯古书馆 KivoWiki</h2>
             <p>模块仅匹配 <code>https://kivo.wiki/</code> 和 <code>https://www.kivo.wiki/</code> 页面。</p>
           </div>
           <a class="site-link" href="https://kivo.wiki/" target="_blank" rel="noreferrer">访问 KivoWiki <span aria-hidden="true">↗</span></a>
+          </section>
         </section>
+          </div>
+        </div>
       </main>
       <footer class="footer"><span>© 朝禊ASOGI</span><span>Kivowiki-Mods</span></footer>
     </div>
@@ -145,6 +220,7 @@
     <script src="data-client.js"></script>
     <script src="dependencies/core-runtime/src/index.js"></script>
     <script src="modules/Kivowiki-Mods-quick-tools/src/index.js"></script>
+    <script src="recommendations.js"></script>
     <script src="module-store.js"></script>
     <script src="options.js"></script>
   </body>

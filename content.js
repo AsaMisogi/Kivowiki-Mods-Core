@@ -3,7 +3,7 @@
 
   const STORAGE_KEY = "state";
   const DEFAULT_STATE = {
-    preferences: { safeMode: false, crashIsolation: true },
+    preferences: { safeMode: false, crashIsolation: true, managerTabVisible: true, marketAutoLoad: true },
     modules: { "quick-tools": { enabled: true, settings: { nightMode: false, expanded: false, collapsedTools: ["night"], position: "right-bottom", size: 46, offset: 22, overlayOpacity: 0.22 } } },
     imported: [],
     dependencies: []
@@ -481,7 +481,10 @@
     state.modules = state.modules && typeof state.modules === "object" ? state.modules : {};
     state.imported = Array.isArray(state.imported) ? state.imported : [];
     state.dependencies = Array.isArray(state.dependencies) ? state.dependencies : [];
-    state.preferences = state.preferences && typeof state.preferences === "object" ? state.preferences : { safeMode: false, crashIsolation: true };
+    state.preferences = state.preferences && typeof state.preferences === "object" ? state.preferences : { safeMode: false, crashIsolation: true, managerTabVisible: true, marketAutoLoad: true };
+    state.preferences.managerTabVisible = state.preferences.managerTabVisible !== false;
+    state.preferences.marketAutoLoad = state.preferences.marketAutoLoad !== false;
+    managerTab.hidden = !state.preferences.managerTabVisible;
     modules.forEach((module) => {
       state.modules[module.id] = { enabled: state.modules[module.id]?.enabled ?? true, settings: { ...module.defaultSettings, ...normalizeSettings(state.modules[module.id]?.settings) } };
     });
@@ -493,6 +496,7 @@
     if (area !== "local" || !changes[STORAGE_KEY]?.newValue) return;
     const previousState = state;
     state = changes[STORAGE_KEY].newValue;
+    if (changes[STORAGE_KEY].newValue?.preferences) managerTab.hidden = changes[STORAGE_KEY].newValue.preferences.managerTabVisible === false;
     if (JSON.stringify(previousState?.dependencies || []) !== JSON.stringify(state.dependencies || [])) {
       dependencyInstances.clear();
       (previousState?.imported || []).forEach(stopModule);

@@ -14,8 +14,10 @@
   const MAX_REVISIONS = 3;
   const BACKUP_VERSION = 3;
   const PACKAGE_NAME_PREFIX = "Kivowiki-Mods-";
+  const MAX_REGISTRY_BYTES = 5 * 1024 * 1024;
   const textDecoder = new TextDecoder();
   const textEncoder = new TextEncoder();
+  const discoveryCache = new Map();
 
   const openDb = () => new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -562,13 +564,43 @@
   };
 
   const parsePackage = async (file) => {
-    if (!file || file.size > MAX_BYTES) throw new Error("模块包不能超过 100 MB");
+    const isFileCollection = file && typeof file !== "string" && typeof file[Symbol.iterator] === "function" && !(file instanceof Blob);
+    const collection = isFileCollection ? [...file] : null;
+    if (!file || (!isFileCollection && file.size > MAX_BYTES)) throw new Error("模块包不能超过 100 MB");
     let rawManifest;
     let files;
     let manifestPath = "module.json";
-    if (/\.zip$/i.test(file.name) || file.type === "application/zip") {
+    if (isFileCollection) {
+      if (!collection.length) throw new Error("所选文件夹为空");
+      const totalSize = collection.reduce((total, item) => total + Number(item.size || 0), 0);
+      if (totalSize > MAX_BYTES) throw new Error("文件夹内容超过 100 MB");
+      const manifestFiles = collection.filter((item) => /(?:^|[\\/])(?:module|dependency|manifest)\.json$/i.test(item.webkitRelativePath || item.name));
+      if (!manifestFiles.length) throw new Error("文件夹中缺少 module.json、dependency.json 或 manifest.json");
+      const manifestDepth = (item) => String(item.webkitRelativePath || item.name).replace(/\\/g, "/").split("/").length;
+      const shallowestDepth = Math.min(...manifestFiles.map(manifestDepth));
+      const rootManifests = manifestFiles.filter((item) => manifestDepth(item) === shallowestDepth);
+      if (rootManifests.length > 1) throw new Error("文件夹根目录中存在多个模块清单，请只选择一个包目录");
+      const manifestFile = rootManifests[0];
+      const sourcePath = String(manifestFile.webkitRelativePath || manifestFile.name).replace(/\\/g, "/");
+      const packageRoot = sourcePath.slice(0, sourcePath.lastIndexOf("/") + 1);
+      rawManifest = JSON.parse(await manifestFile.text());
+      if (rawManifest?.format === "kivowiki-mods-backup") throw new Error("备份文件应通过备份恢复流程导入");
+      files = collection.map((item) => {
+        const itemPath = String(item.webkitRelativePath || item.name).replace(/\\/g, "/");
+        if (!itemPath.startsWith(packageRoot)) throw new Error("文件夹内存在无法归属到模块根目录的文件");
+        return { path: itemPath.slice(packageRoot.length), blob: item };
+      });
+      manifestPath = sourcePath.slice(packageRoot.length);
+    } else if (/\.zip$/i.test(file.name) || file.type === "application/zip") {
       files = await readZip(await file.arrayBuffer());
-      const manifestFile = files.find((item) => /(?:^|\/)(?:module|dependency|manifest)\.json$/i.test(item.path));
+      const preferredRoot = String(file.kivowikiSource?.packagePath || "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+      const manifestCandidates = files.filter((item) => /(?:^|\/)(?:module|dependency|manifest)\.json$/i.test(item.path));
+      const manifestFile = (preferredRoot
+        ? manifestCandidates.find((item) => {
+          const directory = item.path.slice(0, item.path.lastIndexOf("/"));
+          return directory === preferredRoot || directory.endsWith(`/${preferredRoot}`);
+        })
+        : null) || manifestCandidates.find((item) => item.path.split("/").length === Math.min(...manifestCandidates.map((candidate) => candidate.path.split("/").length)));
       if (!manifestFile) throw new Error("ZIP 根目录缺少 module.json、dependency.json 或 manifest.json");
       rawManifest = JSON.parse(await manifestFile.blob.text());
       const packageRoot = manifestFile.path.slice(0, manifestFile.path.lastIndexOf("/") + 1);
@@ -604,7 +636,7 @@
       fileHashes[path] = bytesToHex(await sha256(await item.blob.arrayBuffer()));
     }
     const integrity = `sha256-${bytesToHex(await sha256(textEncoder.encode(canonicalJson(fileHashes))))}`;
-    return { rawManifest, manifest, fileMap, manifestPath, packageSize: file.size, integrity };
+    return { rawManifest, manifest, fileMap, manifestPath, packageSize: isFileCollection ? collection.reduce((total, item) => total + item.size, 0) : file.size, integrity };
   };
 
   const inspectPackage = async (file, forbiddenIds = [], installed = [], installedDependencies = []) => {
@@ -774,7 +806,7 @@
    * 将常见 GitHub/GitLab 仓库页解析为默认分支 ZIP。仓库内容仍会经过与
    * 本地文件完全相同的大小、路径、清单、签名和静态风险预检。
    */
-  const fetchRepositoryPackage = async (input) => {
+  const fetchRepositoryPackage = async (input, packagePath = "") => {
     let url;
     try { url = new URL(String(input || "").trim()); }
     catch { throw new Error("Git 仓库链接无效"); }
@@ -794,7 +826,7 @@
       const commit = commitResponse.ok ? String((await commitResponse.json()).sha || "") : "";
       archiveUrl = `https://codeload.github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/zip/refs/heads/${encodeURIComponent(branch)}`;
       fileName = `${repository}-${branch}.zip`;
-      source = { repository: `https://github.com/${owner}/${repository}`, provider: "github", owner, repo: repository, branch, commit };
+      source = { repository: `https://github.com/${owner}/${repository}`, provider: "github", owner, repo: repository, branch, commit, packagePath: String(packagePath || "").replace(/^\/+|\/+$/g, "") };
     } else if (url.hostname === "gitlab.com") {
       const project = url.pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "").split("/-/")[0];
       if (!project) throw new Error("GitLab 仓库链接缺少项目路径");
@@ -806,7 +838,7 @@
       const commit = commitResponse.ok ? String((await commitResponse.json()).id || "") : "";
       archiveUrl = `https://gitlab.com/${project}/-/archive/${encodeURIComponent(branch)}/${project.split("/").pop()}-${encodeURIComponent(branch)}.zip`;
       fileName = `${project.split("/").pop()}-${branch}.zip`;
-      source = { repository: `https://gitlab.com/${project}`, provider: "gitlab", repo: project, branch, commit };
+      source = { repository: `https://gitlab.com/${project}`, provider: "gitlab", repo: project, branch, commit, packagePath: String(packagePath || "").replace(/^\/+|\/+$/g, "") };
     } else throw new Error("当前仅支持公开 GitHub 或 GitLab 仓库");
     const response = await fetch(archiveUrl, { credentials: "omit", redirect: "follow" });
     if (!response.ok) throw new Error(`仓库压缩包下载失败（HTTP ${response.status}）`);
@@ -819,10 +851,144 @@
     return file;
   };
 
+  const githubRequest = async (url) => {
+    const response = await fetch(url, { credentials: "omit", headers: { Accept: "application/vnd.github+json" } });
+    if (!response.ok) throw new Error(`GitHub API 返回 HTTP ${response.status}`);
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > MAX_REGISTRY_BYTES) throw new Error("GitHub 响应超过 5 MB");
+    return response.json();
+  };
+
+  const readGithubManifest = async (owner, repo, branch, path) => {
+    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+    const data = await githubRequest(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`);
+    if (data?.type !== "file" || typeof data.content !== "string") return null;
+    const bytes = base64ToBuffer(data.content.replace(/\s/g, ""));
+    try { return JSON.parse(new TextDecoder().decode(bytes)); }
+    catch { return null; }
+  };
+
+  const releaseDownloadCount = async (owner, repo) => {
+    const releases = await githubRequest(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases?per_page=100`);
+    return releases.reduce((total, release) => total + (Array.isArray(release.assets) ? release.assets.reduce((sum, asset) => sum + (Number(asset.download_count) || 0), 0) : 0), 0);
+  };
+
+  /**
+   * 从 GitHub 公共搜索结果中筛出真正的 Kivowiki-Mods 包。
+   * 仅匹配仓库名称还不够，因此这里还检查默认分支的 Git 树、清单、入口文件
+   * 和平台版本；普通 README 或同名项目不会出现在市场里。
+   */
+  const discoverGitHubPackages = async ({ query = "", type = "", sort = "updated", page = 1, limit = 12, refresh = false } = {}) => {
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 12, 24));
+    const safePage = Math.max(1, Math.min(Number(page) || 1, 10));
+    const keyword = String(query || "").trim();
+    const cacheKey = JSON.stringify({ keyword, type, sort, safePage, safeLimit });
+    const cached = discoveryCache.get(cacheKey);
+    if (!refresh && cached && cached.expiresAt > Date.now()) return cloneJson(cached.value);
+    if (cached) discoveryCache.delete(cacheKey);
+    const searchText = keyword ? `${keyword} Kivowiki-Mods in:name,description,readme` : "Kivowiki-Mods in:name,description,readme";
+    const githubSort = sort === "stars" ? "stars" : sort === "published" ? "created" : "updated";
+    const search = await githubRequest(`https://api.github.com/search/repositories?q=${encodeURIComponent(searchText)}&page=${safePage}&per_page=${safeLimit}&sort=${githubSort}&order=desc`);
+    const candidates = Array.isArray(search.items) ? search.items.filter((repo) => !repo.archived && !repo.disabled && !repo.fork) : [];
+    const results = [];
+    for (const repo of candidates.slice(0, safeLimit)) {
+      try {
+        const owner = String(repo.owner?.login || "");
+        const name = String(repo.name || "");
+        const branch = String(repo.default_branch || "main");
+        if (!owner || !name) continue;
+        const tree = await githubRequest(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
+        if (tree.truncated) continue;
+        const treePaths = new Set((tree.tree || []).filter((item) => item.type === "blob").map((item) => String(item.path || "").replace(/\\/g, "/")));
+        const manifests = [...treePaths].filter((path) => /(?:^|\/)(?:module|dependency|manifest)\.json$/i.test(path)).sort((left, right) => left.split("/").length - right.split("/").length);
+        for (const manifestPath of manifests.slice(0, 3)) {
+          const rawManifest = await readGithubManifest(owner, name, branch, manifestPath);
+          let manifest;
+          try { manifest = validateManifest(rawManifest); } catch { continue; }
+          const root = manifestPath.slice(0, manifestPath.lastIndexOf("/") + 1);
+          const requiredEntry = `${root}${manifest.entry}`;
+          if (!treePaths.has(requiredEntry)) continue;
+          if (manifest.config && !treePaths.has(`${root}${manifest.config}`)) continue;
+          if (type && manifest.type !== type) continue;
+          if (KivowikiModsPlatform.getCompatibility(manifest)) continue;
+          const downloadCount = sort === "downloads" ? await releaseDownloadCount(owner, name).catch(() => 0) : 0;
+          results.push({
+            id: manifest.id,
+            name: manifest.name,
+            version: manifest.version,
+            type: manifest.type,
+            description: manifest.description,
+            author: manifest.author || owner,
+            repository: `https://github.com/${owner}/${name}`,
+            packageUrl: "",
+            sourceUrl: "github",
+            stars: Number(repo.stargazers_count) || 0,
+            forks: Number(repo.forks_count) || 0,
+            downloadCount,
+            createdAt: repo.created_at || "",
+            updatedAt: repo.updated_at || "",
+            pushedAt: repo.pushed_at || "",
+            license: repo.license?.spdx_id || "",
+            homepage: repo.homepage || "",
+            manifestPath,
+            packagePath: root.replace(/\/$/, ""),
+            branch,
+            commit: ""
+          });
+          break;
+        }
+      } catch (error) { console.warn("跳过无法验证的 GitHub 仓库", repo.full_name, error); }
+    }
+    const value = { items: results, page: safePage, totalPages: Math.max(1, Math.min(10, Math.ceil((Number(search.total_count) || results.length) / safeLimit))) };
+    discoveryCache.set(cacheKey, { value, expiresAt: Date.now() + 5 * 60 * 1000 });
+    while (discoveryCache.size > 20) discoveryCache.delete(discoveryCache.keys().next().value);
+    return cloneJson(value);
+  };
+
+  const fetchRemoteJson = async (input) => {
+    let url;
+    try { url = new URL(String(input || "").trim()); }
+    catch { throw new Error("远程索引地址无效"); }
+    if (url.protocol !== "https:") throw new Error("远程索引只允许 HTTPS 地址");
+    const response = await fetch(url.href, { credentials: "omit", redirect: "follow", headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`远程索引读取失败（HTTP ${response.status}）`);
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > MAX_REGISTRY_BYTES) throw new Error("远程索引超过 5 MB");
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_REGISTRY_BYTES) throw new Error("远程索引超过 5 MB");
+    try {
+      const data = JSON.parse(text);
+      if (!data || data.format !== "kivowiki-mods-registry" || Number(data.version) !== 1) throw new Error("索引格式或版本不受支持");
+      return { url: url.href, data };
+    } catch (error) {
+      if (error.message === "索引格式或版本不受支持") throw error;
+      throw new Error("远程索引不是有效 JSON");
+    }
+  };
+
+  const fetchPackageUrl = async (input, source = {}) => {
+    let url;
+    try { url = new URL(String(input || "").trim()); }
+    catch { throw new Error("模块包地址无效"); }
+    if (url.protocol !== "https:") throw new Error("模块包地址只允许 HTTPS");
+    const response = await fetch(url.href, { credentials: "omit", redirect: "follow" });
+    if (!response.ok) throw new Error(`模块包下载失败（HTTP ${response.status}）`);
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > MAX_BYTES) throw new Error("模块包超过 100 MB");
+    const blob = await response.blob();
+    if (blob.size > MAX_BYTES) throw new Error("模块包超过 100 MB");
+    const fileName = url.pathname.split("/").pop() || "kivowiki-mods-package.zip";
+    const responseType = (response.headers.get("content-type") || "").split(";", 1)[0].toLowerCase();
+    const isJson = responseType.includes("json") || /\.json$/i.test(fileName);
+    const file = new File([blob], fileName, { type: isJson ? "application/json" : "application/zip" });
+    Object.defineProperty(file, "kivowikiSource", { value: { ...source, url: url.href }, enumerable: false });
+    return file;
+  };
+
   const checkForUpdate = async (item, forbiddenIds = [], installed = [], installedDependencies = []) => {
     const repository = item?.source?.repository || item?.source?.url;
     if (!repository) return { status: "unavailable", message: "没有 Git 仓库信息" };
-    const file = await fetchRepositoryPackage(repository);
+    const file = await fetchRepositoryPackage(repository, item?.source?.packagePath || "");
     const inspection = await inspectPackage(file, forbiddenIds.filter((id) => id !== item.id), installed, installedDependencies);
     if (inspection.manifest.id !== item.id || inspection.manifest.type !== item.type) throw new Error("远程仓库中的包身份与已安装包不一致");
     const compared = KivowikiModsPlatform.compareVersions(inspection.manifest.version, item.version);
@@ -830,5 +996,5 @@
     return { status: compared > 0 || (compared === 0 && commitChanged) ? "available" : "current", inspection, latestVersion: inspection.manifest.version, commitChanged };
   };
 
-  globalThis.KivowikiModsStore = { MAX_BYTES, PACKAGE_NAME_PREFIX, storageIdFor, getFile, getText, getPackageFiles, getExtensionText, putText, inspectPackage, inspectBackup, commitPackage, importPackage, importBackup, exportPackage, exportBackup, fetchRepositoryPackage, checkForUpdate, deletePackage, deleteRevisions, getRevisions, rollback };
+  globalThis.KivowikiModsStore = { MAX_BYTES, PACKAGE_NAME_PREFIX, storageIdFor, getFile, getText, getPackageFiles, getExtensionText, putText, inspectPackage, inspectBackup, commitPackage, importPackage, importBackup, exportPackage, exportBackup, fetchRepositoryPackage, discoverGitHubPackages, fetchRemoteJson, fetchPackageUrl, checkForUpdate, deletePackage, deleteRevisions, getRevisions, rollback };
 })();

@@ -1,7 +1,7 @@
 (function registerKivowikiModsPlatform() {
   "use strict";
 
-  const MANAGER_VERSION = "1.4.0";
+  const MANAGER_VERSION = "1.6.0";
   const API_VERSION = "1.1.0";
   const MANIFEST_VERSION = 4;
   const ITEM_TYPES = Object.freeze({ MODULE: "module", DEPENDENCY: "dependency" });
@@ -400,7 +400,7 @@
     version: API_VERSION,
     managerVersion: MANAGER_VERSION,
     manifestVersion: MANIFEST_VERSION,
-    features: Object.freeze(["permissions-v1", "package-signature-v1", "dependencies-v3", "multi-version-v1", "lockfile-v1", "contracts-v1", "resource-claims-v1", "updates-v1", "rollback-v1", "runtime-logs-v1", "data-read-v2"]),
+    features: Object.freeze(["permissions-v1", "package-signature-v1", "dependencies-v3", "multi-version-v1", "lockfile-v1", "contracts-v1", "resource-claims-v1", "updates-v1", "rollback-v1", "runtime-logs-v1", "data-read-v2", "market-v1", "folder-import-v1"]),
     itemTypes: ITEM_TYPES
   });
 
