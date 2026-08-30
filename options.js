@@ -33,7 +33,7 @@
   const marketSearchInput = document.getElementById("market-search");
   const marketTypeInput = document.getElementById("market-type");
   const marketSortInput = document.getElementById("market-sort");
-  const marketSearchButton = document.getElementById("market-search-button");
+  const marketExploreButton = document.getElementById("market-explore-button");
   const marketRefreshButton = document.getElementById("market-refresh-button");
   const marketPrevButton = document.getElementById("market-prev");
   const marketNextButton = document.getElementById("market-next");
@@ -48,8 +48,6 @@
   const dependencyFolderButton = document.getElementById("import-dependency-folder-button");
   const managerTabVisibleInput = document.getElementById("manager-tab-visible");
   const managerTabVisibleLabel = document.getElementById("manager-tab-visible-label");
-  const marketAutoLoadInput = document.getElementById("market-auto-load");
-  const marketAutoLoadLabel = document.getElementById("market-auto-load-label");
   let state = { modules: {}, imported: [], dependencies: [], preferences: {}, lockfile: null };
   let runtimeLogs = [];
   let pendingInspection = null;
@@ -187,7 +185,7 @@
     const query = marketSearchInput.value.trim();
     if (!query && !force) { showToast("请输入搜索关键词，或点击刷新查看社区项目"); marketSearchInput.focus(); return; }
     const requestId = ++marketRequestId;
-    marketSearchButton.disabled = true;
+    marketExploreButton.disabled = true;
     marketRefreshButton.disabled = true;
     marketResults.replaceChildren(textNode("div", "empty-state", "正在读取公开市场信息……"));
     try {
@@ -214,32 +212,7 @@
       marketNextButton.disabled = marketPage >= marketTotalPages;
       renderMarketItems(filtered, query ? "市场搜索" : "社区项目");
     } catch (error) { marketResults.replaceChildren(textNode("div", "empty-state", `市场搜索失败：${error.message}`)); }
-    finally { marketSearchButton.disabled = false; marketRefreshButton.disabled = false; }
-  };
-
-  const autoLoadMarket = async () => {
-    if (marketHasLoaded || state.preferences?.marketAutoLoad === false) return;
-    marketSearchInput.value = "";
-    const requestId = ++marketRequestId;
-    marketSearchButton.disabled = true;
-    marketRefreshButton.disabled = true;
-    marketResults.replaceChildren(textNode("div", "empty-state", "正在验证 GitHub 社区项目……"));
-    try {
-      const result = await KivowikiModsStore.discoverGitHubPackages({ type: marketTypeInput.value, sort: marketSortInput.value, page: 1, limit: 12 });
-      const custom = [];
-      for (const source of state.preferences?.marketSources || []) {
-        try {
-          if (!await hasOptionalHostPermission(source)) continue;
-          const sourceResult = await KivowikiModsStore.fetchRemoteJson(source);
-          custom.push(...normalizeMarketItems(sourceResult.data, sourceResult.url));
-        } catch (error) { console.warn("自定义市场源读取失败", source, error); }
-      }
-      if (requestId !== marketRequestId) return;
-      marketPage = 1; marketTotalPages = result.totalPages || 1; marketHasLoaded = true;
-      marketPageLabel.textContent = `第 1 / ${marketTotalPages} 页`; marketPrevButton.disabled = true; marketNextButton.disabled = marketTotalPages <= 1;
-      renderMarketItems(sortMarketItems([...custom, ...result.items], marketSortInput.value), "社区项目");
-    } catch (error) { marketResults.replaceChildren(textNode("div", "empty-state", `市场加载失败：${error.message}`)); }
-    finally { marketSearchButton.disabled = false; marketRefreshButton.disabled = false; }
+    finally { marketExploreButton.disabled = false; marketRefreshButton.disabled = false; }
   };
 
   const renderSources = () => {
@@ -649,8 +622,6 @@
     crashIsolationLabel.textContent = crashIsolationInput.checked ? "已开启" : "关闭";
     managerTabVisibleInput.checked = state.preferences?.managerTabVisible !== false;
     managerTabVisibleLabel.textContent = managerTabVisibleInput.checked ? "已显示" : "已隐藏";
-    marketAutoLoadInput.checked = state.preferences?.marketAutoLoad !== false;
-    marketAutoLoadLabel.textContent = marketAutoLoadInput.checked ? "已开启" : "已关闭";
     const query = searchInput.value.trim().toLocaleLowerCase();
     const dependencyQuery = dependencySearchInput.value.trim().toLocaleLowerCase();
     const allDependencies = [
@@ -892,6 +863,8 @@
     state.imported = Array.isArray(state.imported) ? state.imported : [];
     state.dependencies = Array.isArray(state.dependencies) ? state.dependencies : [];
     state.preferences = state.preferences && typeof state.preferences === "object" ? state.preferences : {};
+    // 旧版本保存过自动加载偏好；新版本统一改为用户主动探索并清理废弃字段。
+    delete state.preferences.marketAutoLoad;
     state.preferences.marketSources = Array.isArray(state.preferences.marketSources)
       ? state.preferences.marketSources.filter((item) => typeof item === "string").slice(0, 20)
       : [];
@@ -1009,19 +982,12 @@
     const target = button.dataset.tabTarget;
     document.querySelectorAll("[data-tab-target]").forEach((item) => { const active = item === button; item.classList.toggle("is-active", active); item.setAttribute("aria-selected", String(active)); });
     document.querySelectorAll("[data-tab-panel]").forEach((panel) => { panel.hidden = panel.dataset.tabPanel !== target; });
-    if (target === "market") autoLoadMarket();
   }));
   managerTabVisibleInput.addEventListener("change", async () => {
     state.preferences = { ...(state.preferences || {}), managerTabVisible: managerTabVisibleInput.checked };
     managerTabVisibleLabel.textContent = managerTabVisibleInput.checked ? "已显示" : "已隐藏";
     await saveState();
     showToast(managerTabVisibleInput.checked ? "页面侧边入口已显示" : "页面侧边入口已隐藏");
-  });
-  marketAutoLoadInput.addEventListener("change", async () => {
-    state.preferences = { ...(state.preferences || {}), marketAutoLoad: marketAutoLoadInput.checked };
-    marketAutoLoadLabel.textContent = marketAutoLoadInput.checked ? "已开启" : "已关闭";
-    await saveState();
-    showToast(marketAutoLoadInput.checked ? "市场自动加载已开启" : "市场自动加载已关闭");
   });
   safeModeInput.addEventListener("change", async () => { state.preferences = { ...(state.preferences || {}), safeMode: safeModeInput.checked }; await saveState(); render(); showToast(safeModeInput.checked ? "安全模式已开启" : "安全模式已关闭"); });
   crashIsolationInput.addEventListener("change", async () => { state.preferences = { ...(state.preferences || {}), crashIsolation: crashIsolationInput.checked }; await saveState(); render(); showToast(crashIsolationInput.checked ? "崩溃自动隔离已开启" : "崩溃自动隔离已关闭"); });
@@ -1065,11 +1031,14 @@
   document.getElementById("open-logs").addEventListener("click", openLogs);
   logFilter.addEventListener("change", renderLogs);
   document.getElementById("clear-logs").addEventListener("click", async () => { runtimeLogs = []; await chrome.storage.local.set({ runtimeLogs: [] }); renderLogs(); render(); showToast("运行日志已清空"); });
-  marketSearchButton.addEventListener("click", searchMarket);
-  marketRefreshButton.addEventListener("click", () => searchMarket({ force: true, page: 1 }));
+  marketExploreButton.addEventListener("click", () => searchMarket({ force: true, page: 1 }));
+  marketRefreshButton.addEventListener("click", () => {
+    if (!marketHasLoaded) { showToast("请先点击“探索发现”访问 GitHub 社区项目"); return; }
+    searchMarket({ force: true, page: 1 });
+  });
   marketPrevButton.addEventListener("click", () => searchMarket({ force: true, page: Math.max(1, marketPage - 1) }));
   marketNextButton.addEventListener("click", () => searchMarket({ force: true, page: Math.min(marketTotalPages, marketPage + 1) }));
-  marketSearchInput.addEventListener("keydown", (event) => { if (event.key === "Enter") searchMarket(); });
+  marketSearchInput.addEventListener("keydown", (event) => { if (event.key === "Enter") marketExploreButton.click(); });
   marketSortInput.addEventListener("change", () => { if (marketHasLoaded) searchMarket({ force: true, page: 1 }); });
   marketTypeInput.addEventListener("change", () => { if (marketHasLoaded) searchMarket({ force: true, page: 1 }); });
   marketSourceAdd.addEventListener("click", async () => {
@@ -1085,7 +1054,7 @@
       await saveState();
       marketSourceUrl.value = "";
       renderSources();
-      await searchMarket({ force: true, page: 1 });
+      showToast("自定义源已添加；点击“探索发现”时会一并读取");
     } catch (error) { showToast(`添加自定义源失败：${error.message}`); }
   });
   document.getElementById("config-close").addEventListener("click", closeConfig);

@@ -1,7 +1,7 @@
 importScripts("platform.js", "data-client.js", "module-store.js", "dependencies/core-runtime/src/index.js");
 
 const DEFAULT_STATE = {
-  preferences: { safeMode: false, crashIsolation: true, managerTabVisible: true, marketAutoLoad: true },
+  preferences: { safeMode: false, crashIsolation: true, managerTabVisible: true },
   modules: {
     "quick-tools": {
       enabled: true,

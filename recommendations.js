@@ -6,6 +6,12 @@
  * 该文件为空数组时设置页不会显示推荐区，不会影响扩展运行。
  */
 globalThis.KivowikiModsRecommendations = [
+  {
+    title: "Kivowiki-Mods-beautify",
+    description: "为 KivoWiki 提供组件动效、页面主题、首页布局、昼夜背景和字体自定义。",
+    repository: "https://github.com/AsaMisogi/Kivowiki-Mods-beautify",
+    type: "module"
+  },
   // {
   //   title: "示例：阅读进度条",
   //   description: "在文章顶部显示当前阅读进度。",

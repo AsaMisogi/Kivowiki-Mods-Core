@@ -21,10 +21,15 @@ for (const file of ["options.html", "popup.html"]) {
   if (html.includes("modules/quick-tools/src/index.js")) failures.push(`${file} 仍引用旧 quick-tools 路径`);
 }
 const optionsHtml = fs.readFileSync(path.join(root, "options.html"), "utf8");
-for (const id of ["market-search", "market-sort", "market-refresh-button", "market-prev", "market-next", "market-source-url", "market-results", "recommendation-list", "manager-tab-visible", "market-auto-load", "import-folder", "import-folder-button", "import-dependency-folder-button"]) {
+const optionsJs = fs.readFileSync(path.join(root, "options.js"), "utf8");
+const recommendationsSource = fs.readFileSync(path.join(root, "recommendations.js"), "utf8");
+for (const id of ["market-search", "market-sort", "market-explore-button", "market-refresh-button", "market-prev", "market-next", "market-source-url", "market-results", "recommendation-list", "manager-tab-visible", "import-folder", "import-folder-button", "import-dependency-folder-button"]) {
   if (!optionsHtml.includes(`id="${id}"`)) failures.push(`options.html 缺少 ${id} 控件`);
 }
 if (optionsHtml.includes("id=\"export-lockfile\"")) failures.push("options.html 仍保留无必要的导出锁文件按钮");
+if (optionsHtml.includes("market-auto-load") || optionsJs.includes("autoLoadMarket")) failures.push("市场仍包含自动 GitHub 发现入口");
+if (optionsJs.includes('if (target === "market")') || !optionsJs.includes('marketExploreButton.addEventListener("click"')) failures.push("GitHub 探索没有严格绑定到用户主动操作");
+if (!recommendationsSource.includes("https://github.com/AsaMisogi/Kivowiki-Mods-beautify")) failures.push("编辑精选缺少 beautify 推荐模块");
 if (!Array.isArray(manifest.optional_host_permissions) || !manifest.optional_host_permissions.includes("https://*/*")) failures.push("manifest.json 缺少自定义市场源所需的可选 HTTPS 权限");
 if (!manifest.host_permissions?.includes("https://github.com/*")) failures.push("manifest.json 缺少 GitHub 默认分支归档入口权限");
 if (!manifest.host_permissions?.includes("https://raw.githubusercontent.com/*")) failures.push("manifest.json 缺少 GitHub 根目录包低额度验证所需权限");

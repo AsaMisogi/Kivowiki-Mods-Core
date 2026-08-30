@@ -47,23 +47,27 @@
             <div><p class="section-kicker">发现</p><h2 id="market-title">Mod 市场</h2></div>
             <span class="market-safety-note">只展示公开信息，安装仍需逐项确认</span>
           </div>
+          <div id="recommendation-section" class="recommendation-section" hidden>
+            <div class="subsection-heading"><div><p class="section-kicker">编辑精选</p><h3>推荐模块与依赖</h3></div><span class="section-note">内置推荐不会调用 GitHub API</span></div>
+            <div id="recommendation-list" class="recommendation-list"></div>
+          </div>
+          <div class="exploration-heading">
+            <div><p class="section-kicker">社区探索</p><h3>发现 GitHub 社区项目</h3></div>
+            <p>只有主动点击“探索发现”后才会访问 GitHub；进入设置、切换市场和查看推荐均不会消耗 API 额度。</p>
+          </div>
           <div class="market-toolbar">
             <label class="search-box market-search" for="market-search"><span aria-hidden="true">⌕</span><input id="market-search" type="search" placeholder="搜索 GitHub 社区仓库" autocomplete="off"></label>
             <select id="market-type" aria-label="市场包类型"><option value="">模块和依赖</option><option value="module">功能模块</option><option value="dependency">共享依赖</option></select>
             <select id="market-sort" aria-label="市场排序"><option value="updated">最近更新</option><option value="published">最近发布</option><option value="downloads">下载量</option><option value="stars">Star 数</option></select>
-            <button class="primary-button" id="market-search-button" type="button"><span aria-hidden="true">⌕</span> 搜索</button>
+            <button class="primary-button" id="market-explore-button" type="button"><span aria-hidden="true">✦</span> 探索发现</button>
             <button class="outline-button" id="market-refresh-button" type="button" title="刷新市场目录"><span aria-hidden="true">↻</span> 刷新</button>
           </div>
-          <p class="section-note">市场会验证仓库中是否存在有效的 Kivowiki-Mods 清单和入口文件，只展示与本管理器兼容的项目。安装前仍会进行完整预检。</p>
-          <div id="market-results" class="market-results" aria-live="polite"><div class="empty-state">点击“刷新”加载经过清单验证的 GitHub 社区项目，或输入关键词搜索。</div></div>
+          <p class="section-note">探索结果会验证仓库中是否存在有效的 Kivowiki-Mods 清单和入口文件，只展示与本管理器兼容的项目。安装前仍会进行完整预检。</p>
+          <div id="market-results" class="market-results" aria-live="polite"><div class="empty-state">尚未访问 GitHub。可直接安装上方推荐模块，或点击“探索发现”主动查找更多社区项目。</div></div>
           <div class="market-pagination" aria-label="市场分页">
             <button id="market-prev" class="outline-button" type="button" disabled>上一页</button>
             <span id="market-page-label">第 0 页</span>
             <button id="market-next" class="outline-button" type="button" disabled>下一页</button>
-          </div>
-          <div id="recommendation-section" class="recommendation-section" hidden>
-            <div class="subsection-heading"><div><p class="section-kicker">编辑精选</p><h3>推荐模块与依赖</h3></div><span class="section-note">由扩展发布者在 recommendations.js 中维护</span></div>
-            <div id="recommendation-list" class="recommendation-list"></div>
           </div>
         </section>
 
@@ -117,18 +121,6 @@
               <input id="manager-tab-visible" type="checkbox" aria-label="显示侧边插件入口">
               <span class="switch-track"></span>
               <span class="switch-label" id="manager-tab-visible-label">已显示</span>
-            </label>
-          </section>
-          <section class="security-settings" aria-labelledby="market-auto-title">
-            <div class="security-copy">
-              <p class="section-kicker">市场偏好</p>
-              <h2 id="market-auto-title">进入市场时自动加载</h2>
-              <p>开启后，打开市场标签时自动读取经过验证的 GitHub 社区项目。关闭后只在你主动点击搜索或刷新时请求网络。</p>
-            </div>
-            <label class="switch security-switch" title="切换市场自动加载">
-              <input id="market-auto-load" type="checkbox" aria-label="进入市场时自动加载">
-              <span class="switch-track"></span>
-              <span class="switch-label" id="market-auto-load-label">已开启</span>
             </label>
           </section>
           <section class="settings-block" aria-labelledby="source-settings-title">

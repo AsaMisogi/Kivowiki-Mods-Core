@@ -222,7 +222,7 @@
 
 ### 7.1 让 Git 仓库进入市场
 
-Mod 市场会先搜索名称、描述和 README 中包含 `Kivowiki-Mods` 的公开 GitHub 仓库。管理器优先通过原始文件服务验证根目录清单和入口；根目录无包时才读取 Git tree 发现 monorepo 子目录。只有仓库中存在有效的 `module.json`、`dependency.json` 或兼容的 `manifest.json`，且清单、入口文件与管理器版本验证通过，项目才会显示。开发者应遵循以下规范：
+进入配置中心或切换市场标签时不会访问 GitHub。只有用户主动点击“探索发现”后，Mod 市场才搜索名称、描述和 README 中包含 `Kivowiki-Mods` 的公开 GitHub 仓库。管理器优先通过原始文件服务验证根目录清单和入口；根目录无包时才读取 Git tree 发现 monorepo 子目录。只有仓库中存在有效的 `module.json`、`dependency.json` 或兼容的 `manifest.json`，且清单、入口文件与管理器版本验证通过，项目才会显示。开发者应遵循以下规范：
 
 - 仓库必须公开、未归档、不是 fork，并确保默认分支可以下载。
 - 清单使用 `manifestVersion: 4`，`name` 以 `Kivowiki-Mods-` 开头，`id`、`version`、`type` 和 `entry` 均合法。

@@ -4,7 +4,7 @@
   const STORAGE_KEY = "state";
   const PAGE_RUNTIME_VERSION = 3;
   const DEFAULT_STATE = {
-    preferences: { safeMode: false, crashIsolation: true, managerTabVisible: true, marketAutoLoad: true },
+    preferences: { safeMode: false, crashIsolation: true, managerTabVisible: true },
     modules: { "quick-tools": { enabled: true, settings: { nightMode: false, expanded: false, collapsedTools: ["night"], position: "right-bottom", size: 46, offset: 22, overlayOpacity: 0.22 } } },
     imported: [],
     dependencies: []
@@ -572,9 +572,9 @@
     state.modules = state.modules && typeof state.modules === "object" ? state.modules : {};
     state.imported = Array.isArray(state.imported) ? state.imported : [];
     state.dependencies = Array.isArray(state.dependencies) ? state.dependencies : [];
-    state.preferences = state.preferences && typeof state.preferences === "object" ? state.preferences : { safeMode: false, crashIsolation: true, managerTabVisible: true, marketAutoLoad: true };
+    state.preferences = state.preferences && typeof state.preferences === "object" ? state.preferences : { safeMode: false, crashIsolation: true, managerTabVisible: true };
     state.preferences.managerTabVisible = state.preferences.managerTabVisible !== false;
-    state.preferences.marketAutoLoad = state.preferences.marketAutoLoad !== false;
+    delete state.preferences.marketAutoLoad;
     managerTab.hidden = !state.preferences.managerTabVisible;
     modules.forEach((module) => {
       state.modules[module.id] = { enabled: state.modules[module.id]?.enabled ?? true, settings: { ...module.defaultSettings, ...normalizeSettings(state.modules[module.id]?.settings) } };
