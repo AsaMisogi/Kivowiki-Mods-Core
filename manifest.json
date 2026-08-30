@@ -5,7 +5,7 @@
   "description": "为古书馆带来无限的可能性",
   "minimum_chrome_version": "120",
   "permissions": ["storage", "userScripts", "windows"],
-  "host_permissions": ["https://kivo.wiki/*", "https://www.kivo.wiki/*", "https://api.kivo.wiki/*", "https://api.github.com/*", "https://codeload.github.com/*", "https://gitlab.com/*"],
+  "host_permissions": ["https://kivo.wiki/*", "https://www.kivo.wiki/*", "https://api.kivo.wiki/*", "https://github.com/*", "https://api.github.com/*", "https://raw.githubusercontent.com/*", "https://codeload.github.com/*", "https://gitlab.com/*"],
   "optional_host_permissions": ["https://*/*"],
   "background": {
     "service_worker": "background.js"

@@ -79,7 +79,7 @@
 
 ## 来源与审核
 
-`source` 可包含 `registry`、`url`、`repository`。从 GitHub/GitLab 实际导入时，管理器会覆盖并补充 `provider`、`owner`、`repo`、`branch` 与 `commit`，用于后续检查仓库版本是否变化。`review` 可包含 `status`、`reviewer`、`reviewedAt`、`reportUrl`。本地包中的这些字段可能由作者自行填写，因此当前只显示为“声明”，不等同于官方认证。
+`source` 可包含 `registry`、`url`、`repository`。从 GitHub/GitLab 实际导入时，管理器会覆盖并补充 `provider`、`owner`、`repo`、`branch` 与 `commit`，用于后续检查仓库版本是否变化。GitHub 的 `branch` 使用稳定别名 `HEAD` 表示当前默认分支，精确 `commit` 从下载归档的根目录提取；GitLab 保存实际默认分支名。`review` 可包含 `status`、`reviewer`、`reviewedAt`、`reportUrl`。本地包中的这些字段可能由作者自行填写，因此当前只显示为“声明”，不等同于官方认证。
 
 未来社区仓库应维护独立于模块包的发布者公钥目录、撤销列表和审核报告，并通过仓库签名将 `publisher.id` 绑定到真实账号。管理器核心不应硬编码站点 API、作者私钥或审核密钥。
 
@@ -109,7 +109,9 @@
 
 `repository` 应指向公开 GitHub/GitLab 仓库页，`packageUrl` 可以替代它指向 HTTPS ZIP 或 JSON 包。索引条目不是信任凭证，下载包内的真实清单才是安装判断依据。源站应使用 HTTPS、固定版本地址和适当的 CORS 响应头；不要在索引中放置 Token、Cookie 或其他私密数据。
 
-GitHub 自动发现只接受公开、未归档且不是 fork 的仓库，并要求仓库名称、简介或 README 能被 `Kivowiki-Mods` 关键词搜索到。管理器随后读取默认分支 Git tree，验证清单、入口文件、名称前缀、清单版本和管理器兼容范围。仓库被发现只表示“符合公开格式筛选”，不表示官方审核、作者认证或安全保证。一个仓库可以是 monorepo，市场会按每个清单的子目录单独展示和下载。
+GitHub 自动发现只接受公开、未归档且不是 fork 的仓库，并要求仓库名称、简介或 README 能被 `Kivowiki-Mods` 关键词搜索到。管理器优先通过原始文件服务验证根目录清单、入口文件、名称前缀、清单版本和管理器兼容范围，仅为查找 monorepo 子目录回退到 Git tree。该顺序减少未登录 REST API 请求，但安装时仍下载完整归档并执行全部预检。仓库被发现只表示“符合公开格式筛选”，不表示官方审核、作者认证或安全保证。
+
+GitHub 搜索和 monorepo 回退仍受未登录 REST API 限额约束。额度耗尽时市场会停止请求并显示恢复提示，不会尝试用内置 Token、Cookie 或用户账号绕过限制。公开仓库直接导入只访问 GitHub 的静态归档服务，不受该 REST API 额度影响。
 
 ## 安装与升级
 

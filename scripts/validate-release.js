@@ -26,6 +26,8 @@ for (const id of ["market-search", "market-sort", "market-refresh-button", "mark
 }
 if (optionsHtml.includes("id=\"export-lockfile\"")) failures.push("options.html 仍保留无必要的导出锁文件按钮");
 if (!Array.isArray(manifest.optional_host_permissions) || !manifest.optional_host_permissions.includes("https://*/*")) failures.push("manifest.json 缺少自定义市场源所需的可选 HTTPS 权限");
+if (!manifest.host_permissions?.includes("https://github.com/*")) failures.push("manifest.json 缺少 GitHub 默认分支归档入口权限");
+if (!manifest.host_permissions?.includes("https://raw.githubusercontent.com/*")) failures.push("manifest.json 缺少 GitHub 根目录包低额度验证所需权限");
 for (const tab of ["modules", "dependencies", "market", "settings"]) {
   if (!optionsHtml.includes(`data-tab-target="${tab}"`) || !optionsHtml.includes(`data-tab-panel="${tab}"`)) failures.push(`options.html 缺少 ${tab} 标签页`);
 }

@@ -218,18 +218,21 @@
 
 ## 7. 导入模块包
 
-配置中心支持本地单文件 JSON、完整 ZIP 项目包、选定的整个项目文件夹，以及公开 GitHub/GitLab 仓库链接。文件夹选择使用浏览器的目录选择器，文件会先在内存中按相对路径组成包，再进入与 ZIP 完全相同的预检；不会上传文件夹内容。远程仓库会下载默认分支 ZIP，然后进入与本地文件完全相同的预检。包和解压后总大小上限为 100 MB，单文件 32 MB，入口与配置脚本各 4 MB，文件数量最多 2048。资源存储在 IndexedDB，不占用 `chrome.storage.local` 的小配额。ZIP 根目录（或选定文件夹的最外层目录）必须包含 `module.json`、`dependency.json` 或 `manifest.json`。
+配置中心支持本地单文件 JSON、完整 ZIP 项目包、选定的整个项目文件夹，以及公开 GitHub/GitLab 仓库链接。文件夹选择使用浏览器的目录选择器，文件会先在内存中按相对路径组成包，再进入与 ZIP 完全相同的预检；不会上传文件夹内容。远程仓库会下载默认分支 ZIP，然后进入与本地文件完全相同的预检。GitHub 使用默认分支的 `archive/HEAD.zip` 归档入口，由 GitHub 重定向到带精确提交的 codeload 地址；它不先读取 REST API，因此不会因匿名 API 额度耗尽而让直接导入失败。包和解压后总大小上限为 100 MB，单文件 32 MB，入口与配置脚本各 4 MB，文件数量最多 2048。资源存储在 IndexedDB，不占用 `chrome.storage.local` 的小配额。ZIP 根目录（或选定文件夹的最外层目录）必须包含 `module.json`、`dependency.json` 或 `manifest.json`。
 
 ### 7.1 让 Git 仓库进入市场
 
-Mod 市场会先搜索名称、描述和 README 中包含 `Kivowiki-Mods` 的公开 GitHub 仓库，再读取默认分支的 Git tree。只有仓库中存在有效的 `module.json` 或 `dependency.json`，且清单、入口文件与管理器版本验证通过，项目才会显示。开发者应遵循以下规范：
+Mod 市场会先搜索名称、描述和 README 中包含 `Kivowiki-Mods` 的公开 GitHub 仓库。管理器优先通过原始文件服务验证根目录清单和入口；根目录无包时才读取 Git tree 发现 monorepo 子目录。只有仓库中存在有效的 `module.json`、`dependency.json` 或兼容的 `manifest.json`，且清单、入口文件与管理器版本验证通过，项目才会显示。开发者应遵循以下规范：
 
 - 仓库必须公开、未归档、不是 fork，并确保默认分支可以下载。
 - 清单使用 `manifestVersion: 4`，`name` 以 `Kivowiki-Mods-` 开头，`id`、`version`、`type` 和 `entry` 均合法。
 - `entry` 指向的文件必须真实存在；`engines.kivowikiMods` 不应排除当前管理器版本。
 - 仓库名称、简介或 README 建议明确写出 `Kivowiki-Mods`，否则 GitHub 公共搜索可能找不到仓库。
+- 新仓库公开或刚修改名称、简介、README 后，GitHub 搜索索引可能短暂延迟；可先使用“Git 导入”验证安装，不需要为此修改清单。
 - monorepo 可以在子目录放置多个包，市场会按清单所在目录分别识别、安装和更新。
 - 建议为每个稳定版本创建 GitHub Release 并上传 ZIP 附件；附件下载量可用于市场排序。
+
+市场搜索需要 GitHub 未登录 REST API，频繁刷新可能暂时收到 HTTP 403。管理器会说明额度耗尽及预计恢复时间；等待恢复即可。公开 GitHub 仓库的直接导入使用独立的归档下载服务，不受这项搜索额度影响。
 
 自定义 JSON 市场源的条目也必须明确填写 `type: "module"` 或 `type: "dependency"`；市场不会根据仓库名称猜测包类型。
 

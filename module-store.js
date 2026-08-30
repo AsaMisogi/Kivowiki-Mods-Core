@@ -864,20 +864,17 @@
     let archiveUrl = url.href;
     let fileName = "kivowiki-mods-repository.zip";
     let source = { repository: url.href };
-    if (url.hostname === "github.com") {
+    const hostname = url.hostname.toLowerCase();
+    if (["github.com", "www.github.com"].includes(hostname)) {
       const [owner, rawRepo] = url.pathname.split("/").filter(Boolean);
       const repository = rawRepo?.replace(/\.git$/i, "");
       if (!owner || !repository) throw new Error("GitHub 仓库链接缺少所有者或仓库名");
-      const metadata = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`, { headers: { Accept: "application/vnd.github+json" } });
-      if (!metadata.ok) throw new Error(`GitHub 仓库读取失败（HTTP ${metadata.status}）`);
-      const repositoryMetadata = await metadata.json();
-      const branch = String(repositoryMetadata.default_branch || "main");
-      const commitResponse = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/commits/${encodeURIComponent(branch)}`, { headers: { Accept: "application/vnd.github+json" } });
-      const commit = commitResponse.ok ? String((await commitResponse.json()).sha || "") : "";
-      archiveUrl = `https://codeload.github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/zip/refs/heads/${encodeURIComponent(branch)}`;
-      fileName = `${repository}-${branch}.zip`;
-      source = { repository: `https://github.com/${owner}/${repository}`, provider: "github", owner, repo: repository, branch, commit, packagePath: String(packagePath || "").replace(/^\/+|\/+$/g, "") };
-    } else if (url.hostname === "gitlab.com") {
+      // HEAD 始终指向公开仓库的默认分支。GitHub 会把归档请求重定向到
+      // 含精确提交 SHA 的 codeload 地址，不消耗每小时 60 次的匿名 API 额度。
+      archiveUrl = `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/archive/HEAD.zip`;
+      fileName = `${repository}-HEAD.zip`;
+      source = { registry: "github", repository: `https://github.com/${owner}/${repository}`, provider: "github", owner, repo: repository, branch: "HEAD", commit: "", packagePath: String(packagePath || "").replace(/^\/+|\/+$/g, "") };
+    } else if (hostname === "gitlab.com") {
       const project = url.pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "").split("/-/")[0];
       if (!project) throw new Error("GitLab 仓库链接缺少项目路径");
       const metadata = await fetch(`https://gitlab.com/api/v4/projects/${encodeURIComponent(project)}`);
@@ -888,10 +885,14 @@
       const commit = commitResponse.ok ? String((await commitResponse.json()).id || "") : "";
       archiveUrl = `https://gitlab.com/${project}/-/archive/${encodeURIComponent(branch)}/${project.split("/").pop()}-${encodeURIComponent(branch)}.zip`;
       fileName = `${project.split("/").pop()}-${branch}.zip`;
-      source = { repository: `https://gitlab.com/${project}`, provider: "gitlab", repo: project, branch, commit, packagePath: String(packagePath || "").replace(/^\/+|\/+$/g, "") };
+      source = { registry: "gitlab", repository: `https://gitlab.com/${project}`, provider: "gitlab", repo: project, branch, commit, packagePath: String(packagePath || "").replace(/^\/+|\/+$/g, "") };
     } else throw new Error("当前仅支持公开 GitHub 或 GitLab 仓库");
     const response = await fetch(archiveUrl, { credentials: "omit", redirect: "follow" });
-    if (!response.ok) throw new Error(`仓库压缩包下载失败（HTTP ${response.status}）`);
+    if (!response.ok) {
+      if (source.provider === "github" && response.status === 404) throw new Error("GitHub 仓库不存在、未公开或默认分支没有可下载内容");
+      throw new Error(`仓库压缩包下载失败（HTTP ${response.status}）`);
+    }
+    if (source.provider === "github") source.commit = response.url.match(/\/zip\/([a-f0-9]{40})(?:$|[?#])/i)?.[1] || "";
     const declaredSize = Number(response.headers.get("content-length") || 0);
     if (declaredSize > MAX_BYTES) throw new Error("仓库压缩包超过 100 MB");
     const blob = await response.blob();
@@ -901,12 +902,50 @@
     return file;
   };
 
+  const githubApiError = async (response) => {
+    let message = "";
+    try { message = String((await response.json())?.message || ""); } catch { /* 响应没有可解析的错误正文。 */ }
+    const remaining = response.headers.get("x-ratelimit-remaining");
+    const resetAt = Number(response.headers.get("x-ratelimit-reset") || 0) * 1000;
+    if ((response.status === 403 || response.status === 429) && (remaining === "0" || /rate limit/i.test(message))) {
+      const resetText = resetAt > Date.now() ? `，预计 ${new Date(resetAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 恢复` : "";
+      const error = new Error(`GitHub 未登录 API 请求额度已用完${resetText}，请稍后再搜索；公开仓库仍可通过“Git 导入”直接安装`);
+      error.code = "GITHUB_RATE_LIMIT";
+      return error;
+    }
+    return new Error(`GitHub API 返回 HTTP ${response.status}${message ? `：${message}` : ""}`);
+  };
+
   const githubRequest = async (url) => {
     const response = await fetch(url, { credentials: "omit", headers: { Accept: "application/vnd.github+json" } });
-    if (!response.ok) throw new Error(`GitHub API 返回 HTTP ${response.status}`);
+    if (!response.ok) throw await githubApiError(response);
     const length = Number(response.headers.get("content-length") || 0);
     if (length > MAX_REGISTRY_BYTES) throw new Error("GitHub 响应超过 5 MB");
     return response.json();
+  };
+
+  const githubRawUrl = (owner, repo, path) => `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/HEAD/${path.split("/").map(encodeURIComponent).join("/")}`;
+
+  /**
+   * 根目录包走 GitHub 的静态原始文件服务验证，不占用 REST API 额度。
+   * 只有未找到根目录清单时，才使用 Git tree 兼容 monorepo 子目录。
+   */
+  const readGithubRawManifest = async (owner, repo, path) => {
+    const response = await fetch(githubRawUrl(owner, repo, path), { credentials: "omit", redirect: "follow", headers: { Accept: "application/json" } });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`GitHub 原始清单读取失败（HTTP ${response.status}）`);
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > MAX_REGISTRY_BYTES) throw new Error("GitHub 清单超过 5 MB");
+    const text = await response.text();
+    if (textEncoder.encode(text).byteLength > MAX_REGISTRY_BYTES) throw new Error("GitHub 清单超过 5 MB");
+    try { return JSON.parse(text); } catch { return null; }
+  };
+
+  const githubRawFileExists = async (owner, repo, path) => {
+    const response = await fetch(githubRawUrl(owner, repo, path), { method: "HEAD", credentials: "omit", redirect: "follow" });
+    if (response.status === 404) return false;
+    if (!response.ok) throw new Error(`GitHub 包文件读取失败（HTTP ${response.status}）`);
+    return true;
   };
 
   const readGithubManifest = async (owner, repo, branch, path) => {
@@ -947,6 +986,43 @@
         const name = String(repo.name || "");
         const branch = String(repo.default_branch || "main");
         if (!owner || !name) continue;
+        let rootPackageFound = false;
+        for (const manifestPath of ["module.json", "dependency.json", "manifest.json"]) {
+          const rawManifest = await readGithubRawManifest(owner, name, manifestPath);
+          let manifest;
+          try { manifest = validateManifest(rawManifest); } catch { continue; }
+          if (type && manifest.type !== type) continue;
+          if (KivowikiModsPlatform.getCompatibility(manifest)) continue;
+          if (!await githubRawFileExists(owner, name, manifest.entry)) continue;
+          if (manifest.config && !await githubRawFileExists(owner, name, manifest.config)) continue;
+          const downloadCount = sort === "downloads" ? await releaseDownloadCount(owner, name).catch(() => 0) : 0;
+          results.push({
+            id: manifest.id,
+            name: manifest.name,
+            version: manifest.version,
+            type: manifest.type,
+            description: manifest.description,
+            author: manifest.author || owner,
+            repository: `https://github.com/${owner}/${name}`,
+            packageUrl: "",
+            sourceUrl: "github",
+            stars: Number(repo.stargazers_count) || 0,
+            forks: Number(repo.forks_count) || 0,
+            downloadCount,
+            createdAt: repo.created_at || "",
+            updatedAt: repo.updated_at || "",
+            pushedAt: repo.pushed_at || "",
+            license: repo.license?.spdx_id || "",
+            homepage: repo.homepage || "",
+            manifestPath,
+            packagePath: "",
+            branch,
+            commit: ""
+          });
+          rootPackageFound = true;
+          break;
+        }
+        if (rootPackageFound) continue;
         const tree = await githubRequest(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
         if (tree.truncated) continue;
         const treePaths = new Set((tree.tree || []).filter((item) => item.type === "blob").map((item) => String(item.path || "").replace(/\\/g, "/")));
@@ -987,7 +1063,11 @@
           });
           break;
         }
-      } catch (error) { console.warn("跳过无法验证的 GitHub 仓库", repo.full_name, error); }
+      } catch (error) {
+        // 普通损坏仓库只跳过；额度耗尽会影响后续所有候选，必须立即反馈给用户。
+        if (error?.code === "GITHUB_RATE_LIMIT") throw error;
+        console.warn("跳过无法验证的 GitHub 仓库", repo.full_name, error);
+      }
     }
     const value = { items: results, page: safePage, totalPages: Math.max(1, Math.min(10, Math.ceil((Number(search.total_count) || results.length) / safeLimit))) };
     discoveryCache.set(cacheKey, { value, expiresAt: Date.now() + 5 * 60 * 1000 });

@@ -23,7 +23,7 @@
 - 点击内置快捷工具“配置”，确认能加载 `modules/Kivowiki-Mods-quick-tools/src/config.js`，不再显示 `Failed to fetch`。
 - 在配置中心确认“已安装模块”列表显示 `Kivowiki-Mods-quick-tools`，并确认 `options.html` 与 `popup.html` 不再请求不存在的 `modules/quick-tools/src/index.js`。
 - 在桌面和窄屏窗口检查健康概况、模块标识、折叠详情、安装确认、日志和历史版本弹窗没有重叠或溢出。
-- 分别从 GitHub 与 GitLab 公开仓库导入模块和依赖，确认默认分支下载后进入相同预检；私有仓库、非 HTTPS 与非仓库链接应失败。
+- 分别从 GitHub 与 GitLab 公开仓库导入模块和依赖，确认默认分支下载后进入相同预检；GitHub 导入应从 `github.com/.../archive/HEAD.zip` 重定向到含提交 SHA 的 codeload 地址，不应先请求仓库详情 API。私有仓库、非 HTTPS 与非仓库链接应失败。
 
 ## 安装预检
 
@@ -68,7 +68,8 @@
 - 验证锁文件会随状态自动生成，记录模块摘要、来源和实际依赖版本；安装新依赖版本前后分别验证锁定复用与用户主动升级。迁移场景使用社区备份，不再测试单独导出锁文件按钮。
 - 在配置中心测试 GitHub 关键词搜索、自定义源格式校验、首次来源权限拒绝/允许、推荐列表为空/有条目，以及市场安装必须进入预检队列。
 - 测试市场无关键词刷新、最近更新/最近发布/下载量/Star 排序、上一页/下一页、仓库链接跳转，以及不含有效清单的 GitHub 仓库不会显示。
-- 测试 GitHub 仓库搜索结果经过清单和入口文件二次验证后才显示；测试 monorepo 子目录的发现、安装和更新不会选中其他清单。
+- 测试 GitHub 根目录包通过 `raw.githubusercontent.com` 验证清单和入口后显示，且不请求 Git tree；测试 monorepo 才回退到 Git tree，子目录的发现、安装和更新不会选中其他清单。
+- 模拟 GitHub API 返回限流 HTTP 403 与 `x-ratelimit-remaining: 0`，确认市场显示额度耗尽和直接 Git 导入提示；同时确认同一公开仓库仍可通过 `archive/HEAD.zip` 下载并进入预检。
 - 分别选择单个 JSON/ZIP 文件和包含 `module.json` 的项目文件夹，确认相对路径、入口、配置文件、大小限制和预检结果与 ZIP 导入一致。
 - 为模块填写 `dependencySources`，确认缺失依赖会自动下载并逐个进入审核，不会静默安装或覆盖内置包。
 - 构造依赖对依赖、依赖对模块的单向 `conflicts`，确认相关依赖卡片和所有使用模块都显示阻止原因。
