@@ -79,9 +79,9 @@ h1 { margin: 0; font-size: 19px; line-height: 1.1; }
 .health-action:hover { background: var(--accent-soft); }
 .health-action > span:first-child { font-size: 22px; }
 .health-action strong { display: grid; min-width: 24px; height: 22px; place-items: center; border-radius: 11px; color: #fff; background: var(--danger); font-size: 11px; }
-.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 6px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-width: 0; margin-bottom: 6px; }
 .section-heading h2, .site-info h2 { margin: 4px 0 0; font-size: 21px; line-height: 1.2; }
-.module-actions { display: flex; align-items: center; gap: 8px; }
+.module-actions { display: flex; align-items: center; justify-content: flex-end; flex: 1 1 520px; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .search-box { display: flex; align-items: center; gap: 7px; min-width: 190px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: var(--paper); }
 .search-box input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 13px; }
 .outline-button { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 11px; color: var(--accent-dark); background: transparent; cursor: pointer; font-size: 13px; font-weight: 700; white-space: nowrap; }
@@ -201,7 +201,7 @@ code { padding: 1px 4px; border-radius: 3px; color: var(--accent-dark); backgrou
   .intro-block { display: block; padding: 42px 0 30px; }
   .project-info { display: flex; justify-content: flex-start; margin-top: 18px; text-align: left; }
   .section-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
-  .module-actions { width: 100%; flex-wrap: wrap; }
+  .module-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: none; width: 100%; }
   .manager-layout { grid-template-columns: 1fr; gap: 0; }.side-nav { position: sticky; top: 76px; z-index: 2; flex-direction: row; min-height: 0; margin: 0 -14px; padding: 7px 14px; border-right: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--canvas) 94%, transparent); backdrop-filter: blur(12px); overflow-x: auto; }.side-nav-label, .side-nav-spacer { display: none; }.side-nav-item { grid-template-columns: 20px auto auto; flex: 0 0 auto; min-height: 36px; padding: 6px 9px; }.side-nav-item strong { display: none; }
   .market-toolbar, .source-toolbar { align-items: stretch; flex-wrap: wrap; }
   .market-toolbar select, .market-toolbar button, .source-toolbar button { flex: 1 1 auto; }
@@ -209,7 +209,8 @@ code { padding: 1px 4px; border-radius: 3px; color: var(--accent-dark); backgrou
   .market-safety-note { display: none; }
   .recommendation-list { grid-template-columns: 1fr; }
   .market-card, .recommendation-card { align-items: flex-start; flex-direction: column; }.market-card-actions { width: 100%; }.market-card button, .market-card a, .recommendation-card button { width: 100%; justify-content: center; }
-  .search-box { flex: 1 1 170px; }
+  .module-actions .search-box { grid-column: 1 / -1; width: 100%; min-width: 0; }
+  .module-actions .outline-button { justify-content: center; min-width: 0; white-space: normal; text-align: center; }
   .module-card { align-items: flex-start; flex-direction: column; padding: 17px; }
   .module-card-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
   .health-strip { grid-template-columns: 1fr 1fr; }
@@ -221,4 +222,13 @@ code { padding: 1px 4px; border-radius: 3px; color: var(--accent-dark); backgrou
   .history-row { align-items: flex-start; flex-direction: column; }
   .security-settings, .site-info { align-items: flex-start; flex-direction: column; padding: 18px; }
   .security-switch { justify-content: flex-start; }
+}
+@media (min-width: 761px) and (max-width: 1120px) {
+  .section-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .module-actions { justify-content: flex-start; flex: none; width: 100%; }
+  .module-actions .search-box { flex: 1 1 100%; }
+}
+@media (max-width: 420px) {
+  .module-actions { grid-template-columns: 1fr; }
+  .module-actions .search-box { grid-column: 1; }
 }

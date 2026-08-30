@@ -2,7 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "state";
-  const PAGE_RUNTIME_VERSION = 2;
+  const PAGE_RUNTIME_VERSION = 3;
   const DEFAULT_STATE = {
     preferences: { safeMode: false, crashIsolation: true, managerTabVisible: true, marketAutoLoad: true },
     modules: { "quick-tools": { enabled: true, settings: { nightMode: false, expanded: false, collapsedTools: ["night"], position: "right-bottom", size: 46, offset: 22, overlayOpacity: 0.22 } } },
@@ -24,6 +24,7 @@
   let state = null;
   let syncGeneration = 0;
   let pageReloadScheduled = false;
+  const usesStrictSandbox = (entry, currentState = state) => currentState?.preferences?.safeMode === true || entry?.mode === "sandbox";
 
   // 管理器 UI 使用 Shadow DOM 隔离，避免站点 CSS 反向影响模块控件。
   const host = document.createElement("div");
@@ -37,13 +38,21 @@
 
   const managerStyle = document.createElement("style");
   managerStyle.textContent = `
-    :host { all: initial; }
-    .kplus-manager-tab { position: fixed; left: -2px; top: 50%; width: 24px; height: 116px; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 5px; border: 0; border-radius: 0 12px 12px 0; padding: 8px 2px; cursor: pointer; color: #eefafa; background: #1e6870; box-shadow: 0 5px 18px rgba(8,30,40,.22); writing-mode: vertical-rl; font: 600 11px/1 system-ui, sans-serif; opacity: .78; transition: width .18s ease, opacity .18s ease; }
+    :host { all: initial; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; }
+    .kplus-manager-tab { position: fixed; left: -2px; top: 50%; width: 24px; height: 116px; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 5px; border: 0; border-radius: 0 12px 12px 0; padding: 8px 2px; cursor: pointer; color: #eefafa; background: #1e6870; box-shadow: 0 5px 18px rgba(8,30,40,.22); writing-mode: vertical-rl; font: 600 11px/1 system-ui, sans-serif; opacity: .78; transition: width .18s ease, opacity .18s ease; pointer-events: auto; }
     .kplus-manager-tab:hover, .kplus-manager-tab:focus-visible { width: 42px; opacity: 1; }
     .kplus-manager-tab:focus-visible { outline: 3px solid #f4c36c; outline-offset: 2px; }
-    .kplus-view-stack { position: fixed; right: 20px; bottom: 76px; z-index: 2147483645; display: flex; flex-direction: column; gap: 10px; width: min(320px, calc(100vw - 40px)); max-height: calc(100vh - 112px); overflow: auto; overscroll-behavior: contain; pointer-events: none; scrollbar-width: thin; }
+    .kplus-view-stack { position: fixed; right: 20px; bottom: 76px; display: flex; flex-direction: column; gap: 10px; width: min(320px, calc(100vw - 40px)); max-height: calc(100vh - 112px); overflow: auto; overscroll-behavior: contain; pointer-events: none; scrollbar-width: thin; }
     .kplus-view-stack > * { flex: 0 0 auto; pointer-events: auto; }
-    @media (max-width: 600px) { .kplus-view-stack { right: 12px; bottom: 64px; width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 88px); } }
+    .kplus-permission-notice { position: fixed; left: 16px; bottom: 18px; width: min(360px, calc(100vw - 32px)); padding: 15px 16px; border: 1px solid rgba(30,104,112,.24); border-radius: 8px; color: #1d3038; background: rgba(255,255,255,.98); box-shadow: 0 14px 40px rgba(11,38,45,.22); font: 14px/1.55 system-ui, sans-serif; pointer-events: auto; }
+    .kplus-permission-notice[hidden] { display: none; }
+    .kplus-permission-notice strong { display: block; margin-bottom: 4px; font-size: 15px; }
+    .kplus-permission-notice p { margin: 0; color: #61737a; }
+    .kplus-permission-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+    .kplus-permission-actions button { min-height: 34px; border: 1px solid #1e6870; border-radius: 6px; padding: 6px 11px; color: #1e6870; background: #fff; cursor: pointer; font: 700 13px/1 system-ui, sans-serif; }
+    .kplus-permission-actions .primary { color: #fff; background: #1e6870; }
+    .kplus-permission-actions button:focus-visible { outline: 3px solid #d18e3c; outline-offset: 2px; }
+    @media (max-width: 600px) { .kplus-view-stack { right: 12px; bottom: 64px; width: min(320px, calc(100vw - 24px)); max-height: calc(100vh - 88px); } .kplus-permission-notice { left: 12px; bottom: 12px; width: calc(100vw - 24px); } }
   `;
   shadow.append(managerStyle);
   const managerTab = document.createElement("button");
@@ -59,6 +68,28 @@
   managerTab.setAttribute("aria-label", "打开 Kivowiki-Mods 设置");
   managerTab.addEventListener("click", () => chrome.runtime.sendMessage({ type: "open-manager" }));
   shadow.append(managerTab);
+  const permissionNotice = document.createElement("aside");
+  permissionNotice.className = "kplus-permission-notice";
+  permissionNotice.hidden = true;
+  permissionNotice.setAttribute("role", "status");
+  const permissionTitle = document.createElement("strong");
+  permissionTitle.textContent = "页面模块还不能运行";
+  const permissionCopy = document.createElement("p");
+  permissionCopy.textContent = "请在扩展详情中开启“允许用户脚本”，然后刷新此页面。";
+  const permissionActions = document.createElement("div");
+  permissionActions.className = "kplus-permission-actions";
+  const permissionDismiss = document.createElement("button");
+  permissionDismiss.type = "button";
+  permissionDismiss.textContent = "稍后处理";
+  const permissionOpen = document.createElement("button");
+  permissionOpen.type = "button";
+  permissionOpen.className = "primary";
+  permissionOpen.textContent = "前往开启";
+  permissionDismiss.addEventListener("click", () => { permissionNotice.hidden = true; });
+  permissionOpen.addEventListener("click", () => chrome.runtime.sendMessage({ type: "open-extension-details" }));
+  permissionActions.append(permissionDismiss, permissionOpen);
+  permissionNotice.append(permissionTitle, permissionCopy, permissionActions);
+  shadow.append(permissionNotice);
   document.documentElement.append(host);
 
   const writeLog = (moduleId, level, event, message) => chrome.runtime.sendMessage({ type: "runtime-log", moduleId, level, event, message }).catch(() => {});
@@ -219,8 +250,10 @@
         // User Script 不可用属于宿主环境问题，不应计入模块崩溃次数。
         const detail = userScriptStatus?.error ? `（${userScriptStatus.error}）` : "";
         writeLog(entry.id, "warn", "user-script-unavailable", `页面模块未启动：请在扩展详情中开启“允许用户脚本”，然后刷新扩展和 KivoWiki 页面${detail}`);
+        permissionNotice.hidden = false;
         return;
       }
+      permissionNotice.hidden = true;
       const runtimeUpdatedAfterPageLoad = Number(userScriptStatus.updatedAt || 0) > performance.timeOrigin;
       if (userScriptStatus.requiresReload === true || runtimeUpdatedAfterPageLoad) {
         // 动态脚本在当前文档加载后才完成注册时，浏览器不会补执行。仅自动刷新
@@ -470,6 +503,24 @@
       }
       catch (error) { runtime.send({ type: "asset-result", requestId: message.requestId, ok: false, error: error.message }); }
     }
+    if (message.type === "user-asset-get") {
+      let transferId = "";
+      try {
+        const opened = await chrome.runtime.sendMessage({ type: "module-user-asset-open", moduleId: entry.id, slot: message.slot });
+        if (!opened?.ok) throw new Error(opened?.error || "本地媒体读取失败");
+        transferId = opened.data.transferId;
+        const chunks = [];
+        for (let offset = 0; offset < opened.data.size; offset += 1024 * 1024) {
+          const result = await chrome.runtime.sendMessage({ type: "module-user-asset-chunk", moduleId: entry.id, transferId, offset, length: Math.min(1024 * 1024, opened.data.size - offset) });
+          if (!result?.ok) throw new Error(result?.error || "本地媒体传输失败");
+          const binary = atob(result.data);
+          chunks.push(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
+        }
+        runtime.send({ type: "user-asset-result", requestId: message.requestId, ok: true, data: { blob: new Blob(chunks, { type: opened.data.type }), name: opened.data.name, type: opened.data.type, size: opened.data.size } });
+      }
+      catch (error) { runtime.send({ type: "user-asset-result", requestId: message.requestId, ok: false, error: error.message }); }
+      finally { if (transferId) chrome.runtime.sendMessage({ type: "module-user-asset-close", moduleId: entry.id, transferId }).catch(() => {}); }
+    }
     if (message.type === "data-request") {
       if (!allowed.has("network.read")) { runtime.send({ type: "data-result", requestId: message.requestId, ok: false, error: "模块未获得只读网络权限" }); return; }
       const input = message.input;
@@ -507,7 +558,7 @@
     const startBatch = () => {
       if (generation !== syncGeneration) return;
       queue.splice(0, 4).forEach((entry) => {
-        const safe = state.preferences?.safeMode === true || entry.mode === "sandbox";
+        const safe = usesStrictSandbox(entry);
         (safe ? startImportedModule : startPageModule)(entry);
       });
       if (queue.length) setTimeout(startBatch, 0);
@@ -529,6 +580,10 @@
       state.modules[module.id] = { enabled: state.modules[module.id]?.enabled ?? true, settings: { ...module.defaultSettings, ...normalizeSettings(state.modules[module.id]?.settings) } };
     });
     await chrome.storage.local.set({ [STORAGE_KEY]: state });
+    if (state.preferences.safeMode !== true) {
+      const runtimeStatus = await chrome.runtime.sendMessage({ type: "page-runtime-status" }).catch(() => null);
+      permissionNotice.hidden = runtimeStatus?.available !== false;
+    } else permissionNotice.hidden = true;
     syncAll();
   };
 
@@ -536,7 +591,7 @@
     if (area !== "local") return;
     const runtimeUpdatedAt = Number(changes.kivoPlusPageScriptsUpdatedAt?.newValue || 0);
     if (runtimeUpdatedAt > performance.timeOrigin && state) {
-      const entry = (state.imported || []).find((item) => item.enabled !== false && item.mode !== "sandbox" && !item.quarantined);
+      const entry = (state.imported || []).find((item) => item.enabled !== false && !usesStrictSandbox(item) && !item.quarantined);
       if (entry) reloadForPageRuntime(entry, "runtime-restored", "页面运行环境已经恢复，正在刷新一次以启动导入模块");
     }
     if (!changes[STORAGE_KEY]?.newValue) return;
@@ -563,7 +618,7 @@
     (state.imported || []).forEach((entry) => {
       const previous = oldImported.find((item) => item.id === entry.id);
       if (!resolution.status[entry.id]?.runnable) { stopModule(entry); return; }
-      const safe = state.preferences?.safeMode === true || entry.mode === "sandbox";
+      const safe = usesStrictSandbox(entry);
       const runtime = safe ? importedRuntimes.get(entry.id) : pageRuntimes.get(entry.id);
       if (!safe && previous && previous.version !== entry.version) {
         stopModule(entry);

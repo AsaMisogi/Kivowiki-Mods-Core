@@ -17,7 +17,7 @@ const PAGE_MATCHES = ["https://kivo.wiki/*", "https://www.kivo.wiki/*"];
 const PAGE_SCRIPT_PREFIX = "kivo-plus-page-";
 // 动态 User Script 会跨浏览器会话保留。仅比较模块版本会让 Core 升级后的旧宿主
 // 继续运行，因此宿主协议或构建逻辑变化时必须同步提升此版本，强制重建脚本。
-const PAGE_RUNTIME_VERSION = 2;
+const PAGE_RUNTIME_VERSION = 3;
 const MANAGER_WINDOW_STORAGE_KEY = "managerWindowId";
 let managerWindowId = null;
 let managerWindowOperation = null;
@@ -30,8 +30,15 @@ const logRate = new Map();
 const MAX_LOGS = 500;
 const dependencyDataClient = globalThis.KivowikiModsDataClient.create({ concurrency: 16, maxRetries: 4, maxCacheEntries: 512, staleIfErrorMs: 30 * 60 * 1000 });
 const BUILTIN_DATA_MODULES = new Set(["quick-tools"]);
+const userAssetTransfers = new Map();
 
 const isKivoPage = (url) => /^https:\/\/(?:www\.)?kivo\.wiki\//.test(url || "");
+const openExtensionDetails = async () => {
+  // Chromium 不允许扩展替用户开启“允许用户脚本”。这里打开浏览器原生
+  // 扩展详情页，由用户完成一次明确授权；创建标签页不需要 tabs 读取权限。
+  const scheme = /Edg\//.test(globalThis.navigator?.userAgent || "") ? "edge" : "chrome";
+  await chrome.tabs.create({ url: `${scheme}://extensions/?id=${chrome.runtime.id}` });
+};
 const pageScriptFingerprint = (state) => JSON.stringify({
   safeMode: state?.preferences?.safeMode === true,
   dependencies: (state?.dependencies || []).map((entry) => ({ id: entry.id, version: entry.version, enabled: entry.enabled !== false, entry: entry.entry, updatedAt: entry.updatedAt })),
@@ -252,14 +259,14 @@ const buildPageScript = (entry, dependencySources = []) => {
     "};",
     `let settings = ${settings};`,
     'const post = (message) => window.postMessage({ source: "kivowiki-mods-page-module", moduleId, runtimeVersion, token, ...message }, "*");',
-    "const requestHost = (type, payload = {}) => new Promise((resolve, reject) => { const requestId = String(Date.now()) + Math.random(); const timeoutMs = type === 'data-request' ? 185000 : 10000; const timer = setTimeout(() => { requests.delete(requestId); reject(new Error('宿主请求超时')); }, timeoutMs); requests.set(requestId, { resolve(value) { clearTimeout(timer); resolve(value); }, reject(error) { clearTimeout(timer); reject(error); } }); post({ type, ...payload, requestId }); });",
+    "const requestHost = (type, payload = {}) => new Promise((resolve, reject) => { const requestId = String(Date.now()) + Math.random(); const timeoutMs = type === 'data-request' ? 185000 : type === 'user-asset-get' ? 120000 : 10000; const timer = setTimeout(() => { requests.delete(requestId); reject(new Error('宿主请求超时')); }, timeoutMs); requests.set(requestId, { resolve(value) { clearTimeout(timer); resolve(value); }, reject(error) { clearTimeout(timer); reject(error); } }); post({ type, ...payload, requestId }); });",
     "const onHostMessage = (event) => {",
     "  const message = event.data;",
     '  if (!message || message.source !== "kivo-plus-page-host" || message.moduleId !== moduleId) return;',
     '  if (message.type === "hello") { post({ type: "hello-ready" }); if (startupState === "ready") post({ type: "ready" }); if (startupState === "error") post({ type: "error", message: startupMessage }); return; }',
     '  if (message.token !== token) return;',
     '  if (message.type === "settings-change") { settings = { ...settings, ...(message.settings || {}) }; context.settings = { ...settings }; settingsListeners.forEach((listener) => { try { listener({ ...settings }); } catch (error) { post({ type: "error", message: error instanceof Error ? error.message : "设置更新失败" }); } }); }',
-    '  if (message.type === "storage-result" || message.type === "asset-result" || message.type === "data-result" || message.type === "settings-result") { const request = requests.get(message.requestId); if (!request) return; requests.delete(message.requestId); message.ok === false ? request.reject(new Error(message.error || "请求失败")) : request.resolve(message.data); }',
+    '  if (message.type === "storage-result" || message.type === "asset-result" || message.type === "user-asset-result" || message.type === "data-result" || message.type === "settings-result") { const request = requests.get(message.requestId); if (!request) return; requests.delete(message.requestId); message.ok === false ? request.reject(new Error(message.error || "请求失败")) : request.resolve(message.data); }',
     '  if (message.type === "stop") { cleanups.reverse().forEach((cleanup) => { try { cleanup(); } catch (error) { console.error(error); } }); requests.forEach((request) => request.reject(new Error("模块已停止"))); requests.clear(); window.removeEventListener("message", onHostMessage); }',
     "};",
     "window.addEventListener(\"message\", onHostMessage);",
@@ -279,6 +286,9 @@ const buildPageScript = (entry, dependencySources = []) => {
     "  assets: {",
     '    getText(path) { return requestHost("asset-get-text", { path }); },',
     '    getFile(path) { return requestHost("asset-get-file", { path }); }',
+    "  },",
+    "  userAssets: {",
+    '    get(slot) { return requestHost("user-asset-get", { slot }); }',
     "  },",
     '  data: { request(input) { if (!permissions.has("network.read")) return Promise.reject(new Error("模块未获得只读网络权限")); return dataRequest(input); }, clearCache() { dataCache.clear(); } },',
     '  log(level, message) { post({ type: "log", level, message: String(message || "") }); },',
@@ -411,6 +421,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return undefined;
   }
 
+  if (message?.type === "open-extension-details") {
+    openExtensionDetails().catch((error) => console.error("扩展详情页打开失败", error));
+    return undefined;
+  }
+
   if (message?.type === "page-runtime-status") {
     // 不信任上一次浏览器会话留下的布尔缓存。用户可能刚刚开启“允许用户脚本”，
     // 或 Core 已升级但模块本身未变化；重新同步才能恢复并刷新动态运行时。
@@ -521,6 +536,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then((data) => sendResponse({ ok: data != null, data, error: data == null ? "模块资源不存在" : undefined }))
       .catch((error) => sendResponse({ ok: false, error: error.message || "模块资源读取失败" }));
     return true;
+  }
+
+  if (message?.type === "module-user-asset-open") {
+    if (!sender.tab?.url || !isKivoPage(sender.tab.url)) {
+      sendResponse({ ok: false, error: "请求来源不是 KivoWiki 页面" });
+      return undefined;
+    }
+    if (typeof message.moduleId !== "string" || typeof message.slot !== "string") {
+      sendResponse({ ok: false, error: "用户资源参数无效" });
+      return undefined;
+    }
+    chrome.storage.local.get("state")
+      .then((stored) => {
+        const module = stored.state?.imported?.find((entry) => entry.id === message.moduleId && entry.enabled !== false);
+        if (!module) throw new Error("模块不存在或未启用");
+        if (!Array.isArray(module.grantedPermissions) || !module.grantedPermissions.includes("settings")) throw new Error("模块未获得设置权限");
+        return KivowikiModsStore.getUserAsset(module.id, message.slot);
+      })
+      .then((data) => {
+        if (!data?.blob) { sendResponse({ ok: false, error: "本地媒体不存在" }); return; }
+        const transferId = crypto.randomUUID();
+        const timer = setTimeout(() => userAssetTransfers.delete(transferId), 60_000);
+        userAssetTransfers.set(transferId, { blob: data.blob, moduleId: message.moduleId, tabId: sender.tab.id, timer });
+        sendResponse({ ok: true, data: { transferId, name: data.name, type: data.type, size: data.size } });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error.message || "本地媒体读取失败" }));
+    return true;
+  }
+
+  if (message?.type === "module-user-asset-chunk") {
+    const transfer = userAssetTransfers.get(message.transferId);
+    if (!transfer || transfer.tabId !== sender.tab?.id || transfer.moduleId !== message.moduleId) {
+      sendResponse({ ok: false, error: "本地媒体传输已失效，请重试" });
+      return undefined;
+    }
+    const offset = Math.max(0, Math.trunc(Number(message.offset) || 0));
+    const length = Math.min(1024 * 1024, Math.max(1, Math.trunc(Number(message.length) || 1024 * 1024)));
+    transfer.blob.slice(offset, offset + length).arrayBuffer()
+      .then((buffer) => {
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+        sendResponse({ ok: true, data: btoa(binary) });
+      })
+      .catch((error) => sendResponse({ ok: false, error: error.message || "本地媒体分块读取失败" }));
+    return true;
+  }
+
+  if (message?.type === "module-user-asset-close") {
+    const transfer = userAssetTransfers.get(message.transferId);
+    if (transfer && transfer.tabId === sender.tab?.id && transfer.moduleId === message.moduleId) {
+      clearTimeout(transfer.timer);
+      userAssetTransfers.delete(message.transferId);
+    }
+    sendResponse({ ok: true });
+    return undefined;
   }
 
   return undefined;

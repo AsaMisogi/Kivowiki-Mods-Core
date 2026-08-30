@@ -473,7 +473,17 @@
     const queryLocalFonts = async () => {
       if (typeof window.queryLocalFonts !== "function") return [];
       const fonts = await window.queryLocalFonts();
-      return [...new Set(fonts.map((font) => font.family || font.fullName || "").filter(Boolean))].slice(0, 500);
+      const unique = new Map();
+      fonts.forEach((font) => {
+        const family = String(font.family || font.fullName || "").slice(0, 160);
+        if (!family || unique.has(family)) return;
+        unique.set(family, {
+          family,
+          fullName: String(font.fullName || family).slice(0, 160),
+          postscriptName: String(font.postscriptName || "").slice(0, 160)
+        });
+      });
+      return [...unique.values()].slice(0, 500);
     };
     runtime.onMessage = async (event) => {
       if (event.source !== frame.contentWindow || event.data?.source !== "kivo-plus-config" || event.data.token !== token) return;
@@ -512,6 +522,18 @@
         } catch (error) { runtime.send({ type: "asset-result", requestId: message.requestId, ok: false, error: error.message }); }
       }
       if (message.type === "asset-get-file") runtime.send({ type: "asset-result", requestId: message.requestId, ok: false, error: "配置页不支持读取二进制资源" });
+      if (message.type === "user-asset-put") {
+        try {
+          const data = await KivowikiModsStore.putUserAsset(module.id, message.slot, message.file);
+          runtime.send({ type: "user-asset-result", requestId: message.requestId, ok: true, data });
+        } catch (error) { runtime.send({ type: "user-asset-result", requestId: message.requestId, ok: false, error: error.message }); }
+      }
+      if (message.type === "user-asset-delete") {
+        try {
+          await KivowikiModsStore.deleteUserAsset(module.id, message.slot);
+          runtime.send({ type: "user-asset-result", requestId: message.requestId, ok: true, data: null });
+        } catch (error) { runtime.send({ type: "user-asset-result", requestId: message.requestId, ok: false, error: error.message }); }
+      }
       if (message.type === "error") {
         clearTimeout(runtime.timeout);
         loading.hidden = false;
@@ -827,6 +849,7 @@
             const storageId = KivowikiModsStore.storageIdFor(module);
             await globalThis.KivowikiModsStore.deletePackage(storageId);
             await globalThis.KivowikiModsStore.deleteRevisions(storageId);
+            if (!isDependency) await globalThis.KivowikiModsStore.deleteUserAssets(module.id);
             const stored = await chrome.storage.local.get(null);
             const moduleKeys = Object.keys(stored).filter((key) => key.startsWith(`module:${module.id}:`));
             if (moduleKeys.length) await chrome.storage.local.remove(moduleKeys);

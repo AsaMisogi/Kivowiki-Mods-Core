@@ -286,6 +286,8 @@ Mod 市场会先搜索名称、描述和 README 中包含 `Kivowiki-Mods` 的公
 - `context.ui.setText(viewId, target, text)`：预留的文本更新能力；当前建议重新 `render` 整个视图。
 - `context.assets.getText(path)`：读取 ZIP 包内的文本资源，路径必须是包内相对路径。
 - `context.assets.getFile(path)`：读取 ZIP 包内的二进制资源并返回 `Blob`；配置页面仅支持文本资源。
+- `context.userAssets.put(slot, file)`、`context.userAssets.delete(slot)`：仅配置页面可用。保存或删除用户主动选择的本地图片/视频；资源按模块 ID 与槽位隔离，单文件上限 100 MB，保存在 IndexedDB，不进入普通设置或模块导出包。
+- `context.userAssets.get(slot)`：仅页面模式可用。读取本模块配置页保存的用户资源，返回 `{ blob, name, type, size }`；宿主使用分块传输，模块应在不再使用时撤销自己创建的 Object URL。
 - `context.dependencies`：模块声明的依赖实例表。严格沙箱中的依赖仍受 `connect-src 'none'` 限制。
 
 ## 9. 依赖包

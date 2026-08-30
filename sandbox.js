@@ -18,10 +18,11 @@
   const send = (token, message, config = false) => window.parent.postMessage({ source: config ? "kivo-plus-config" : "kivo-plus-sandbox", token, ...message }, "*");
   const requestHost = (token, message, config = false) => new Promise((resolve, reject) => {
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const timeoutMs = message.type === "user-asset-put" ? 120000 : REQUEST_TIMEOUT;
     const timeout = setTimeout(() => {
       requests.delete(requestId);
       reject(new Error("宿主请求超时"));
-    }, REQUEST_TIMEOUT);
+    }, timeoutMs);
     requests.set(requestId, {
       resolve(value) { clearTimeout(timeout); resolve(value); },
       reject(error) { clearTimeout(timeout); reject(error); }
@@ -57,7 +58,7 @@
       active.settingsListeners.forEach((listener) => listener({ ...active.settings }));
       return;
     }
-    if (message.type === "data-result" || message.type === "settings-result" || message.type === "local-fonts-result") {
+    if (message.type === "data-result" || message.type === "settings-result" || message.type === "local-fonts-result" || message.type === "user-asset-result") {
       if (active?.token !== message.token) return;
       const request = requests.get(message.requestId);
       if (!request) return;
@@ -126,8 +127,11 @@
           root: isConfig ? document.body : undefined,
           document: isConfig ? document : undefined,
           window: isConfig ? window : undefined,
-          // 配置宿主只传字体名称，不传字体文件和路径，模块不能借此读取其他本地资料。
-          localFonts: isConfig && Array.isArray(message.localFonts) ? Object.freeze(message.localFonts.map((font) => String(font).slice(0, 160)).slice(0, 500)) : Object.freeze([]),
+           // 配置宿主只传字体元数据，不传字体文件和路径，模块不能借此读取其他本地资料。
+           localFonts: isConfig && Array.isArray(message.localFonts) ? Object.freeze(message.localFonts.map((font) => {
+             if (font && typeof font === "object") return Object.freeze({ family: String(font.family || "").slice(0, 160), fullName: String(font.fullName || "").slice(0, 160), postscriptName: String(font.postscriptName || "").slice(0, 160) });
+             return Object.freeze({ family: String(font || "").slice(0, 160), fullName: String(font || "").slice(0, 160), postscriptName: "" });
+           }).slice(0, 500)) : Object.freeze([]),
         ui: {
            render(viewId, view) { send(message.token, { type: "render", viewId, view }, isConfig); },
            remove(viewId) { send(message.token, { type: "remove", viewId }, isConfig); },
@@ -148,9 +152,19 @@
           // 严格沙箱不允许网络访问，避免模块绕过权限边界。
           request() { return Promise.reject(new Error("当前隔离运行模式不提供网络数据能力")); }
          },
-          refreshLocalFonts() {
+           refreshLocalFonts() {
             if (!isConfig) return Promise.resolve([]);
             return requestHost(message.token, { type: "local-fonts" }, true);
+           },
+          userAssets: {
+            put(slot, file) {
+              if (!isConfig) return Promise.reject(new Error("只有配置页面可以选择本地文件"));
+              return requestHost(message.token, { type: "user-asset-put", slot, file }, true);
+            },
+            delete(slot) {
+              if (!isConfig) return Promise.reject(new Error("只有配置页面可以删除本地文件"));
+              return requestHost(message.token, { type: "user-asset-delete", slot }, true);
+            }
           },
          api: {
            version: String(message.platform?.version || "0.0.0"),

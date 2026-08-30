@@ -3,14 +3,16 @@
 
   // chrome.storage.local 适合小型设置，模块资源与历史版本统一放在 IndexedDB。
   const DB_NAME = "kivo-plus-modules";
-  const DB_VERSION = 4;
+  const DB_VERSION = 5;
   const FILE_STORE = "files";
   const REVISION_STORE = "revisions";
   const REVISION_FILE_STORE = "revision-files";
+  const USER_ASSET_STORE = "user-assets";
   const MAX_BYTES = 100 * 1024 * 1024;
   const MAX_FILE_BYTES = 32 * 1024 * 1024;
   const MAX_CODE_BYTES = 4 * 1024 * 1024;
   const MAX_FILES = 2048;
+  const MAX_USER_ASSET_BYTES = 100 * 1024 * 1024;
   const MAX_REVISIONS = 3;
   const BACKUP_VERSION = 3;
   const PACKAGE_NAME_PREFIX = "Kivowiki-Mods-";
@@ -26,6 +28,7 @@
       if (!db.objectStoreNames.contains(FILE_STORE)) db.createObjectStore(FILE_STORE);
       if (!db.objectStoreNames.contains(REVISION_STORE)) db.createObjectStore(REVISION_STORE, { keyPath: "key" });
       if (!db.objectStoreNames.contains(REVISION_FILE_STORE)) db.createObjectStore(REVISION_FILE_STORE);
+      if (!db.objectStoreNames.contains(USER_ASSET_STORE)) db.createObjectStore(USER_ASSET_STORE);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error("模块资源数据库打开失败"));
@@ -66,8 +69,8 @@
 
   const keyFor = (id, path) => `${id}:${normalizePath(path)}`;
   const storageIdFor = (item) => item?.storageId || (item?.type === "dependency" ? KivowikiModsPlatform.packageKey(item) : item?.id);
-  const request = (store, method, value) => new Promise((resolve, reject) => {
-    const operation = store[method](value);
+  const request = (store, method, ...args) => new Promise((resolve, reject) => {
+    const operation = store[method](...args);
     operation.onsuccess = () => resolve(operation.result);
     operation.onerror = () => reject(operation.error || new Error("模块资源操作失败"));
   });
@@ -115,6 +118,53 @@
     const blob = await getFile(id, path);
     if (!blob) return null;
     return blob.text();
+  };
+
+  const normalizeUserAssetSlot = (value) => {
+    const slot = String(value || "");
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/i.test(slot)) throw new Error("用户资源槽位无效");
+    return slot;
+  };
+  const userAssetKey = (id, slot) => `${String(id || "")}:${normalizeUserAssetSlot(slot)}`;
+  const putUserAsset = async (id, slot, file) => {
+    if (!(file instanceof Blob) || file.size <= 0) throw new Error("请选择有效的媒体文件");
+    if (file.size > MAX_USER_ASSET_BYTES) throw new Error("本地媒体不能超过 100 MB");
+    if (!/^(image|video)\//i.test(file.type || "")) throw new Error("本地背景只支持图片或视频");
+    const db = await openDb();
+    await request(db.transaction(USER_ASSET_STORE, "readwrite").objectStore(USER_ASSET_STORE), "put", {
+      blob: file,
+      name: String(file.name || "本地媒体").slice(0, 240),
+      type: String(file.type || "application/octet-stream").slice(0, 120),
+      size: file.size,
+      updatedAt: new Date().toISOString()
+    }, userAssetKey(id, slot));
+    db.close();
+    return { name: String(file.name || "本地媒体").slice(0, 240), type: file.type, size: file.size };
+  };
+  const getUserAsset = async (id, slot) => {
+    const db = await openDb();
+    const value = await request(db.transaction(USER_ASSET_STORE, "readonly").objectStore(USER_ASSET_STORE), "get", userAssetKey(id, slot));
+    db.close();
+    return value || null;
+  };
+  const deleteUserAsset = async (id, slot) => {
+    const db = await openDb();
+    await request(db.transaction(USER_ASSET_STORE, "readwrite").objectStore(USER_ASSET_STORE), "delete", userAssetKey(id, slot));
+    db.close();
+  };
+  const deleteUserAssets = async (id) => {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(USER_ASSET_STORE, "readwrite");
+      const request = tx.objectStore(USER_ASSET_STORE).openCursor(IDBKeyRange.bound(`${id}:`, `${id}:\uffff`));
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor) { cursor.delete(); cursor.continue(); }
+      };
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error || new Error("用户资源清理失败"));
+    });
+    db.close();
   };
 
   const getPackageFiles = async (id, paths = null) => {
@@ -996,5 +1046,5 @@
     return { status: compared > 0 || (compared === 0 && commitChanged) ? "available" : "current", inspection, latestVersion: inspection.manifest.version, commitChanged };
   };
 
-  globalThis.KivowikiModsStore = { MAX_BYTES, PACKAGE_NAME_PREFIX, storageIdFor, getFile, getText, getPackageFiles, getExtensionText, putText, inspectPackage, inspectBackup, commitPackage, importPackage, importBackup, exportPackage, exportBackup, fetchRepositoryPackage, discoverGitHubPackages, fetchRemoteJson, fetchPackageUrl, checkForUpdate, deletePackage, deleteRevisions, getRevisions, rollback };
+  globalThis.KivowikiModsStore = { MAX_BYTES, PACKAGE_NAME_PREFIX, storageIdFor, getFile, getText, getPackageFiles, getExtensionText, putText, putUserAsset, getUserAsset, deleteUserAsset, deleteUserAssets, inspectPackage, inspectBackup, commitPackage, importPackage, importBackup, exportPackage, exportBackup, fetchRepositoryPackage, discoverGitHubPackages, fetchRemoteJson, fetchPackageUrl, checkForUpdate, deletePackage, deleteRevisions, getRevisions, rollback };
 })();

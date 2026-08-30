@@ -19,7 +19,7 @@ const createBackground = ({ imported = [], fingerprints = {}, scripts = [] } = {
     kivoPlusPageFingerprints: fingerprints
   };
   const sessionValues = {};
-  const calls = { create: [], update: [], register: [], unregister: [] };
+  const calls = { create: [], update: [], register: [], unregister: [], tabCreate: [] };
   let resolveCreate;
   const createResult = new Promise((resolve) => { resolveCreate = resolve; });
 
@@ -30,10 +30,14 @@ const createBackground = ({ imported = [], fingerprints = {}, scripts = [] } = {
   };
   const chrome = {
     runtime: {
+      id: "test-extension-id",
       getURL: (value) => `chrome-extension://test/${value}`,
       onInstalled: { addListener: (listener) => listeners.installed.push(listener) },
       onStartup: { addListener: (listener) => listeners.startup.push(listener) },
       onMessage: { addListener: (listener) => listeners.messages.push(listener) }
+    },
+    tabs: {
+      async create(options) { calls.tabCreate.push(options); return { id: 1 }; }
     },
     storage: {
       local: {
@@ -143,7 +147,25 @@ test("旧版页面运行时指纹会强制重建动态 User Script", async () =>
   assert.equal(runtime.calls.unregister[0].ids[0], "kivo-plus-page-beautify");
   assert.equal(runtime.calls.register.length, 1);
   assert.equal(runtime.calls.register[0][0].world, "MAIN");
-  assert.match(runtime.calls.register[0][0].js[0].code, /const runtimeVersion = 2;/);
+  assert.match(runtime.calls.register[0][0].js[0].code, /const runtimeVersion = 3;/);
   assert.doesNotThrow(() => new Function(runtime.calls.register[0][0].js[0].code));
-  assert.match(runtime.values.kivoPlusPageFingerprints.beautify, /"runtimeVersion":2/);
+  assert.match(runtime.values.kivoPlusPageFingerprints.beautify, /"runtimeVersion":3/);
+});
+
+test("安全模式关闭时页面模块仍注册为 MAIN world User Script", async () => {
+  const module = { id: "developer-tool", name: "Kivowiki-Mods-developer-tool", version: "1.0.0", enabled: true, mode: "page", entry: "index.js", permissions: [{ id: "page.modify" }], grantedPermissions: ["page.modify"], dependencies: {}, optionalDependencies: {}, conflicts: {}, engines: {} };
+  const runtime = createBackground({ imported: [module] });
+  const onMessage = runtime.listeners.messages[0];
+  const status = await new Promise((resolve) => onMessage({ type: "page-runtime-status" }, {}, resolve));
+  assert.equal(status.available, true);
+  assert.equal(runtime.calls.register.length, 1);
+  assert.equal(runtime.calls.register[0][0].world, "MAIN");
+});
+
+test("权限提示按钮打开当前扩展详情页", async () => {
+  const runtime = createBackground();
+  runtime.listeners.messages[0]({ type: "open-extension-details" }, {}, () => {});
+  await flushTasks();
+  assert.equal(runtime.calls.tabCreate.length, 1);
+  assert.match(runtime.calls.tabCreate[0].url, /^chrome:\/\/extensions\/\?id=test-extension-id$/);
 });
