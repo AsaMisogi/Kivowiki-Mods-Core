@@ -57,7 +57,7 @@
       active.settingsListeners.forEach((listener) => listener({ ...active.settings }));
       return;
     }
-    if (message.type === "data-result" || message.type === "settings-result") {
+    if (message.type === "data-result" || message.type === "settings-result" || message.type === "local-fonts-result") {
       if (active?.token !== message.token) return;
       const request = requests.get(message.requestId);
       if (!request) return;
@@ -69,10 +69,10 @@
 
     stop();
     try {
-       if (typeof message.code !== "string" || !message.code.trim() || message.code.length > 4 * 1024 * 1024) throw new Error("模块代码为空或超过 4 MB");
-       // 代码只在 Manifest sandbox 的隔离源中求值，不能访问扩展 API 或页面 DOM。
-        const dependencyValues = {};
-        const validateExport = (value, contract, path) => {
+      if (typeof message.code !== "string" || !message.code.trim() || message.code.length > 4 * 1024 * 1024) throw new Error("模块代码为空或超过 4 MB");
+      // 代码只在 Manifest sandbox 的隔离源中求值，不能访问扩展 API 或页面 DOM。
+      const dependencyValues = {};
+      const validateExport = (value, contract, path) => {
           for (const [key, expected] of Object.entries(contract || {})) {
             const next = value?.[key];
             const actual = Array.isArray(next) ? "array" : next === null ? "null" : typeof next;
@@ -83,24 +83,24 @@
               validateExport(next, expected, `${path}.${key}`);
             }
           }
-        };
-       for (const dependency of Array.isArray(message.dependencySources) ? message.dependencySources : []) {
+      };
+      for (const dependency of Array.isArray(message.dependencySources) ? message.dependencySources : []) {
          const definition = new Function(`"use strict"; return (${dependency.code}\n);`)();
          if (!definition || typeof definition.create !== "function") throw new Error(`依赖 ${dependency.id} 必须返回带 create() 的对象`);
          // 不传 dependencyServices：严格沙箱依赖即使包含网络客户端，也无法
          // 绕过 connect-src 'none' 和宿主权限边界。
-          const value = definition.create(Object.freeze({ ...dependencyValues }));
-          validateExport(value, dependency.exports, dependency.packageKey || dependency.id);
-          dependencyValues[dependency.id] = value;
-       }
-       const module = new Function(`"use strict"; return (${message.code}\n);`)();
+        const value = definition.create(Object.freeze({ ...dependencyValues }));
+        validateExport(value, dependency.exports, dependency.packageKey || dependency.id);
+        dependencyValues[dependency.id] = value;
+      }
+      const module = new Function(`"use strict"; return (${message.code}\n);`)();
       if (!module || typeof module.mount !== "function") throw new Error("模块代码必须返回带 mount(context) 的对象");
 
       const cleanups = [];
       const eventListeners = [];
       const settingsListeners = [];
-       const isConfig = message.type === "init-config";
-       const permissions = new Set(Array.isArray(message.permissions) ? message.permissions : (isConfig ? ["settings", "assets"] : []));
+      const isConfig = message.type === "init-config";
+      const permissions = new Set(Array.isArray(message.permissions) ? message.permissions : (isConfig ? ["settings", "assets"] : []));
        const supportsApi = (range) => {
          const expected = String(range || "*");
          if (expected === "*") return true;
@@ -108,7 +108,7 @@
          const expectedMajor = expected.match(/\d+/)?.[0];
          return Boolean(expectedMajor && currentMajor === expectedMajor);
        };
-       active = {
+      active = {
          token: message.token,
          isConfig,
         settings: normalizeSettings(message.settings),
@@ -116,16 +116,18 @@
         eventListeners,
         settingsListeners
       };
-        const context = {
+      const context = {
          id: message.id,
          site: { ...(message.site || {}) },
          platform: Object.freeze({ ...(message.platform || {}) }),
          permissions: Object.freeze([...permissions]),
           settings: { ...active.settings },
           dependencies: Object.freeze(dependencyValues),
-         root: isConfig ? document.body : undefined,
-         document: isConfig ? document : undefined,
-         window: isConfig ? window : undefined,
+          root: isConfig ? document.body : undefined,
+          document: isConfig ? document : undefined,
+          window: isConfig ? window : undefined,
+          // 配置宿主只传字体名称，不传字体文件和路径，模块不能借此读取其他本地资料。
+          localFonts: isConfig && Array.isArray(message.localFonts) ? Object.freeze(message.localFonts.map((font) => String(font).slice(0, 160)).slice(0, 500)) : Object.freeze([]),
         ui: {
            render(viewId, view) { send(message.token, { type: "render", viewId, view }, isConfig); },
            remove(viewId) { send(message.token, { type: "remove", viewId }, isConfig); },
@@ -138,7 +140,7 @@
             // 使用请求应答而不是只发通知，配置页可以安全等待真实保存结果。
             return requestHost(message.token, { type: "save-settings", settings: active.settings }, isConfig);
           },
-         assets: {
+          assets: {
            getText(path) { return permissions.has("assets") ? requestHost(message.token, { type: "asset-get-text", path }, isConfig) : Promise.reject(new Error("模块未获得资源读取权限")); },
            getFile(path) { return permissions.has("assets") ? requestHost(message.token, { type: "asset-get-file", path }, isConfig) : Promise.reject(new Error("模块未获得资源读取权限")); }
         },
@@ -146,6 +148,10 @@
           // 严格沙箱不允许网络访问，避免模块绕过权限边界。
           request() { return Promise.reject(new Error("当前隔离运行模式不提供网络数据能力")); }
          },
+          refreshLocalFonts() {
+            if (!isConfig) return Promise.resolve([]);
+            return requestHost(message.token, { type: "local-fonts" }, true);
+          },
          api: {
            version: String(message.platform?.version || "0.0.0"),
            supports: supportsApi,

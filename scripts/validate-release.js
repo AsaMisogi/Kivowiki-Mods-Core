@@ -34,6 +34,7 @@ if (!fs.existsSync(path.join(root, "recommendations.js"))) failures.push("缺少
 const quickToolsBytes = moduleManifest.files.reduce((total, file) => total + fs.statSync(path.join(root, QUICK_TOOLS_ROOT, file)).size, 0);
 if (quickToolsBytes > 1024 * 1024) failures.push(`quick-tools 发布文件超过 1 MiB：${quickToolsBytes}`);
 if (!dependencyManifest.exports?.request || !dependencyManifest.exports?.listAll) failures.push("core-runtime 缺少强类型导出契约");
+if (/new Function\s*\(/.test(fs.readFileSync(path.join(root, "content.js"), "utf8"))) failures.push("content.js 不能使用 new Function 执行导入代码，违反 MV3 CSP");
 
 if (failures.length) {
   console.error(failures.join("\n"));

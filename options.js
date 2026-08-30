@@ -62,6 +62,7 @@
   let marketPage = 1;
   let marketTotalPages = 1;
   let marketHasLoaded = false;
+  let pageRuntimeStatus = { available: null, error: "" };
 
   const showToast = (message) => {
     toast.textContent = message;
@@ -469,6 +470,11 @@
       timeout: null,
       send(message) { frame.contentWindow?.postMessage({ source: "kivo-plus-config-host", token, ...message }, "*"); }
     };
+    const queryLocalFonts = async () => {
+      if (typeof window.queryLocalFonts !== "function") return [];
+      const fonts = await window.queryLocalFonts();
+      return [...new Set(fonts.map((font) => font.family || font.fullName || "").filter(Boolean))].slice(0, 500);
+    };
     runtime.onMessage = async (event) => {
       if (event.source !== frame.contentWindow || event.data?.source !== "kivo-plus-config" || event.data.token !== token) return;
       const message = event.data;
@@ -490,6 +496,13 @@
         } catch (error) {
           showToast(`配置保存失败：${error.message}`);
           runtime.send({ type: "settings-result", requestId: message.requestId, ok: false, error: error.message });
+        }
+      }
+      if (message.type === "local-fonts") {
+        try {
+          runtime.send({ type: "local-fonts-result", requestId: message.requestId, ok: true, data: await queryLocalFonts() });
+        } catch (error) {
+          runtime.send({ type: "local-fonts-result", requestId: message.requestId, ok: false, error: error.message || "本机字体读取失败" });
         }
       }
       if (message.type === "asset-get-text") {
@@ -515,11 +528,20 @@
         if (configRuntime !== runtime) return;
         const code = module.builtin ? await globalThis.KivowikiModsStore.getExtensionText(module.config) : await globalThis.KivowikiModsStore.getText(module.id, module.config);
         if (typeof code !== "string") throw new Error("配置文件不存在");
+        let localFonts = [];
+        try {
+          // Local Font Access 只能在配置宿主页可靠调用，sandbox iframe 通常没有
+          // 顶层权限；将字体名称作为初始化快照传给配置模块，不传字体文件内容。
+          localFonts = await queryLocalFonts();
+        } catch {
+          // 用户拒绝字体权限或浏览器不支持时，配置模块会使用 FontFaceSet 候选检测。
+        }
         runtime.send({
           type: "init-config",
           id: module.id,
           code,
           settings: settings || {},
+          localFonts,
           permissions: ["settings", "assets"],
           platform: KivowikiModsPlatform.publicApi,
           site: { hostname: "kivo.wiki", pathname: "/" }
@@ -672,8 +694,14 @@
       else if (module.trust?.status === "invalid") addBadge("签名异常", "warn");
       else addBadge("未签名", "muted");
       if (!module.builtin && module.review?.status === "approved") addBadge("声明已审核", "info");
+      const pageRuntimeUnavailable = !module.builtin
+        && module.mode !== "sandbox"
+        && state.preferences?.safeMode !== true
+        && pageRuntimeStatus.available === false;
+      if (pageRuntimeUnavailable) addBadge("页面运行未启用", "bad");
       info.append(badges);
       if (moduleStatus.reasons?.length) info.append(textNode("p", "module-warning", moduleStatus.reasons.join("；")));
+      if (pageRuntimeUnavailable) info.append(textNode("p", "module-warning", pageRuntimeStatus.error || "请在扩展详情中开启“允许用户脚本”，然后刷新扩展和 KivoWiki 页面。"));
       if (moduleStatus.warnings?.length) info.append(textNode("p", "module-advisory", moduleStatus.warnings.join("；")));
       const permissionDetails = document.createElement("details");
       permissionDetails.className = "module-details";
@@ -821,9 +849,22 @@
   };
 
   const load = async () => {
-    const stored = await chrome.storage.local.get([STORAGE_KEY, "runtimeLogs"]);
+    const stored = await chrome.storage.local.get([STORAGE_KEY, "runtimeLogs", "kivoPlusUserScripts", "kivoPlusUserScriptsError"]);
     state = stored[STORAGE_KEY] || state;
     runtimeLogs = Array.isArray(stored.runtimeLogs) ? stored.runtimeLogs : [];
+    pageRuntimeStatus = {
+      available: typeof stored.kivoPlusUserScripts === "boolean" ? stored.kivoPlusUserScripts : null,
+      error: String(stored.kivoPlusUserScriptsError || "")
+    };
+    // 打开管理器时主动让后台重新核验动态脚本。这样用户刚开启浏览器的
+    // “允许用户脚本”后，不必等待下一次浏览器启动才恢复页面模块。
+    const latestRuntimeStatus = await chrome.runtime.sendMessage({ type: "page-runtime-status" }).catch(() => null);
+    if (latestRuntimeStatus) {
+      pageRuntimeStatus = {
+        available: latestRuntimeStatus.available === true,
+        error: String(latestRuntimeStatus.error || "")
+      };
+    }
     state.modules = state.modules && typeof state.modules === "object" ? state.modules : {};
     state.imported = Array.isArray(state.imported) ? state.imported : [];
     state.dependencies = Array.isArray(state.dependencies) ? state.dependencies : [];
@@ -1033,6 +1074,13 @@
     if (changes.runtimeLogs?.newValue) {
       runtimeLogs = Array.isArray(changes.runtimeLogs.newValue) ? changes.runtimeLogs.newValue : [];
       if (!panelModal.hidden && panelTitle.textContent === "运行日志") renderLogs();
+    }
+    if (changes.kivoPlusUserScripts || changes.kivoPlusUserScriptsError) {
+      pageRuntimeStatus = {
+        available: changes.kivoPlusUserScripts?.newValue ?? pageRuntimeStatus.available,
+        error: String(changes.kivoPlusUserScriptsError?.newValue ?? pageRuntimeStatus.error)
+      };
+      render();
     }
     if (changes[STORAGE_KEY]?.newValue) {
       state = changes[STORAGE_KEY].newValue;

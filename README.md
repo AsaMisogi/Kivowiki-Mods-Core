@@ -137,7 +137,7 @@ Kivowiki-Mods/
 
 ### 模块不是任意脚本执行器
 
-导入模块默认以页面模式运行，能够自由操作 KivoWiki 当前页面的 DOM、CSS 和浏览器页面 API；这是用户主动安装社区模块后选择承担的页面级风险。开启安全模式后，导入模块统一交给 Manifest sandbox 执行，不能访问扩展 API、页面 DOM 或网络，只能通过受限消息协议使用 UI 和设置能力。页面模式依赖 Chrome 120+ 的 User Scripts API；用户需要按安装说明开启对应浏览器开关。
+导入模块默认以页面模式运行，能够自由操作 KivoWiki 当前页面的 DOM、CSS 和浏览器页面 API；这是用户主动安装社区模块后选择承担的页面级风险。开启安全模式后，导入模块统一交给 Manifest sandbox 执行，不能访问扩展 API、页面 DOM 或网络，只能通过受限消息协议使用 UI 和设置能力。页面模式使用 Chrome 120+ 的 User Scripts API；如果浏览器没有开启 User Scripts，管理器会记录明确的环境提示，不会使用违反 MV3 CSP 的 `eval` 或 `new Function` 执行导入代码，也不会把注入失败错误计入模块崩溃隔离。用户需要按安装说明开启 User Scripts，才能运行需要页面 DOM 的模块。
 
 ### 模块能力上下文
 

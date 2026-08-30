@@ -2,6 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "state";
+  const PAGE_RUNTIME_VERSION = 2;
   const DEFAULT_STATE = {
     preferences: { safeMode: false, crashIsolation: true, managerTabVisible: true, marketAutoLoad: true },
     modules: { "quick-tools": { enabled: true, settings: { nightMode: false, expanded: false, collapsedTools: ["night"], position: "right-bottom", size: 46, offset: 22, overlayOpacity: 0.22 } } },
@@ -22,6 +23,7 @@
   let saveQueue = Promise.resolve();
   let state = null;
   let syncGeneration = 0;
+  let pageReloadScheduled = false;
 
   // 管理器 UI 使用 Shadow DOM 隔离，避免站点 CSS 反向影响模块控件。
   const host = document.createElement("div");
@@ -188,6 +190,19 @@
     return response.data;
   };
 
+  const reloadForPageRuntime = (entry, event, message) => {
+    const reloadKey = `kivo-plus-runtime-reload:${entry.id}`;
+    if (!pageReloadScheduled && sessionStorage.getItem(reloadKey) !== "1") {
+      pageReloadScheduled = true;
+      sessionStorage.setItem(reloadKey, "1");
+      writeLog(entry.id, "info", event, message);
+      window.setTimeout(() => location.reload(), 80);
+      return true;
+    }
+    writeLog(entry.id, "warn", "runtime-reload-guard", "页面运行时已经更新，请手动刷新当前 KivoWiki 页面");
+    return false;
+  };
+
   const startPageModule = async (entry) => {
     try {
       stopModule(entry);
@@ -198,6 +213,22 @@
       if (moduleGenerations.get(entry.id) !== generation) return;
       if (typeof code !== "string") { notify(`模块“${entry.name}”缺少入口文件`); return; }
       if (state?.imported?.find((item) => item.id === entry.id)?.enabled === false) return;
+      const userScriptStatus = await chrome.runtime.sendMessage({ type: "page-runtime-status" }).catch(() => null);
+      if (userScriptStatus?.available !== true) {
+        // 内容脚本不能使用 eval/new Function，不能在这里执行导入代码。
+        // User Script 不可用属于宿主环境问题，不应计入模块崩溃次数。
+        const detail = userScriptStatus?.error ? `（${userScriptStatus.error}）` : "";
+        writeLog(entry.id, "warn", "user-script-unavailable", `页面模块未启动：请在扩展详情中开启“允许用户脚本”，然后刷新扩展和 KivoWiki 页面${detail}`);
+        return;
+      }
+      const runtimeUpdatedAfterPageLoad = Number(userScriptStatus.updatedAt || 0) > performance.timeOrigin;
+      if (userScriptStatus.requiresReload === true || runtimeUpdatedAfterPageLoad) {
+        // 动态脚本在当前文档加载后才完成注册时，浏览器不会补执行。仅自动刷新
+        // 一次，并使用 sessionStorage 防止浏览器异常时形成刷新循环。
+        reloadForPageRuntime(entry, "runtime-reload", "页面运行时已就绪，正在刷新一次以启动模块");
+        return;
+      }
+      sessionStorage.removeItem(`kivo-plus-runtime-reload:${entry.id}`);
       const runtime = {
       token: null,
       started: false,
@@ -224,8 +255,12 @@
         if (pageRuntimes.get(entry.id) !== runtime || runtime.started) return;
         runtime.stop();
         pageRuntimes.delete(entry.id);
-        if (runtime.token) reportCrash(entry, new Error("模块启动超时"));
-        else writeLog(entry.id, "info", "reload-required", "页面模式模块已安装，请刷新当前 KivoWiki 页面后启用");
+        if (runtime.token) {
+          reportCrash(entry, new Error("模块启动超时"));
+        } else {
+          // User Script 未注入或仍在等待浏览器调度属于环境问题，不标记模块崩溃。
+          writeLog(entry.id, "warn", "user-script-timeout", "页面模块未收到 User Script 握手，请开启“允许用户脚本”并刷新扩展和 KivoWiki 页面");
+        }
       }, 8000);
     } catch (error) { reportCrash(entry, error); }
   };
@@ -381,6 +416,11 @@
     const runtime = pageRuntimes.get(message.moduleId);
     if (!runtime) return;
     if (!acceptMessage(message.moduleId)) return;
+    if (message.runtimeVersion !== PAGE_RUNTIME_VERSION) {
+      const entry = state?.imported?.find((item) => item.id === message.moduleId);
+      if (entry) reloadForPageRuntime(entry, "runtime-version-reload", "检测到旧版页面运行时，正在刷新一次完成升级");
+      return;
+    }
     if (message.type === "hello-ready") { runtime.token = message.token; clearInterval(runtime.helloTimer); runtime.send({ type: "settings-change", settings: state?.imported?.find((item) => item.id === message.moduleId)?.settings || {} }); return; }
     if (message.type === "ready") { runtime.token = message.token; runtime.started = true; clearInterval(runtime.helloTimer); clearTimeout(runtime.startTimer); runtime.send({ type: "settings-change", settings: state?.imported?.find((item) => item.id === message.moduleId)?.settings || {} }); writeLog(message.moduleId, "info", "started", "页面模块启动完成"); return; }
     if (message.token !== runtime.token) return;
@@ -493,7 +533,13 @@
   };
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !changes[STORAGE_KEY]?.newValue) return;
+    if (area !== "local") return;
+    const runtimeUpdatedAt = Number(changes.kivoPlusPageScriptsUpdatedAt?.newValue || 0);
+    if (runtimeUpdatedAt > performance.timeOrigin && state) {
+      const entry = (state.imported || []).find((item) => item.enabled !== false && item.mode !== "sandbox" && !item.quarantined);
+      if (entry) reloadForPageRuntime(entry, "runtime-restored", "页面运行环境已经恢复，正在刷新一次以启动导入模块");
+    }
+    if (!changes[STORAGE_KEY]?.newValue) return;
     const previousState = state;
     state = changes[STORAGE_KEY].newValue;
     if (changes[STORAGE_KEY].newValue?.preferences) managerTab.hidden = changes[STORAGE_KEY].newValue.preferences.managerTabVisible === false;
@@ -526,7 +572,15 @@
       }
        if (!runtime || !previous || previous.entry !== entry.entry || previous.version !== entry.version || previous.enabled !== entry.enabled || previous.mode !== entry.mode || previous.quarantined !== entry.quarantined || JSON.stringify(previous.grantedPermissions) !== JSON.stringify(entry.grantedPermissions) || previousState?.preferences?.safeMode !== state.preferences?.safeMode) {
         (safe ? startImportedModule : startPageModule)(entry);
-      } else if (JSON.stringify(previous.settings) !== JSON.stringify(entry.settings)) runtime.send({ type: "settings-change", settings: entry.settings || {} });
+       } else if (JSON.stringify(previous.settings) !== JSON.stringify(entry.settings)) {
+         // 页面后备通道没有 User Script runtime，但仍登记了设置监听器。
+         // 直接通知监听器可以热更新设置，避免每次改颜色都重建整棵页面增强树。
+         const fallbackListeners = settingsListeners.get(entry.id);
+         if (fallbackListeners) fallbackListeners.forEach((callback) => {
+           try { callback(entry.settings || {}); } catch (error) { reportCrash(entry, error); }
+         });
+         else runtime?.send({ type: "settings-change", settings: entry.settings || {} });
+       }
     });
     oldImported.filter((entry) => !(state.imported || []).some((item) => item.id === entry.id)).forEach(stopModule);
   });

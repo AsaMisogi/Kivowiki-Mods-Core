@@ -15,7 +15,12 @@ const DEFAULT_STATE = {
 
 const PAGE_MATCHES = ["https://kivo.wiki/*", "https://www.kivo.wiki/*"];
 const PAGE_SCRIPT_PREFIX = "kivo-plus-page-";
+// 动态 User Script 会跨浏览器会话保留。仅比较模块版本会让 Core 升级后的旧宿主
+// 继续运行，因此宿主协议或构建逻辑变化时必须同步提升此版本，强制重建脚本。
+const PAGE_RUNTIME_VERSION = 2;
+const MANAGER_WINDOW_STORAGE_KEY = "managerWindowId";
 let managerWindowId = null;
+let managerWindowOperation = null;
 let syncPromise = null;
 let syncAgain = false;
 let logQueue = Promise.resolve();
@@ -51,6 +56,69 @@ const pageScriptFingerprint = (state) => JSON.stringify({
 const schedulePageScriptSync = () => {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => syncPageScripts().catch(console.error), 120);
+};
+
+const rememberManagerWindow = async (windowId) => {
+  managerWindowId = Number.isInteger(windowId) ? windowId : null;
+  if (!chrome.storage.session) return;
+  if (managerWindowId == null) await chrome.storage.session.remove(MANAGER_WINDOW_STORAGE_KEY);
+  else await chrome.storage.session.set({ [MANAGER_WINDOW_STORAGE_KEY]: managerWindowId });
+};
+
+const readManagerWindowId = async () => {
+  if (managerWindowId != null) return managerWindowId;
+  if (!chrome.storage.session) return null;
+  const stored = await chrome.storage.session.get(MANAGER_WINDOW_STORAGE_KEY);
+  return Number.isInteger(stored[MANAGER_WINDOW_STORAGE_KEY]) ? stored[MANAGER_WINDOW_STORAGE_KEY] : null;
+};
+
+const findManagerWindow = async () => {
+  const optionsUrl = chrome.runtime.getURL("options.html");
+  const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["popup"] });
+  return windows.find((window) => window.tabs?.some((tab) => tab.url === optionsUrl)) || null;
+};
+
+const focusOrCreateManagerWindow = async () => {
+  const existingId = await readManagerWindowId();
+  if (existingId != null) {
+    try {
+      await chrome.windows.update(existingId, { focused: true });
+      managerWindowId = existingId;
+      return;
+    } catch {
+      // 浏览器可能在后台休眠期间关闭了窗口；清除失效 ID 后再创建。
+      await rememberManagerWindow(null);
+    }
+  }
+
+  // storage.session 在扩展重载或完整退出浏览器后可能为空，但设置窗口仍可能
+  // 被浏览器恢复。按扩展内部 URL 扫描一次，避免这类情况下重复打开窗口。
+  const discovered = await findManagerWindow();
+  if (discovered?.id != null) {
+    await chrome.windows.update(discovered.id, { focused: true });
+    await rememberManagerWindow(discovered.id);
+    return;
+  }
+
+  const created = await chrome.windows.create({
+    url: chrome.runtime.getURL("options.html"),
+    type: "popup",
+    width: 1080,
+    height: 820,
+    focused: true
+  });
+  await rememberManagerWindow(created.id);
+};
+
+const openManagerWindow = () => {
+  // 多个页面入口可能在第一个 create() 完成前同时发消息。复用同一个 Promise，
+  // 保证“检查、聚焦、创建”是一个原子操作，不会竞态创建多个设置窗口。
+  if (!managerWindowOperation) {
+    managerWindowOperation = focusOrCreateManagerWindow()
+      .catch((error) => console.error("KivowikiMods 配置窗口打开失败", error))
+      .finally(() => { managerWindowOperation = null; });
+  }
+  return managerWindowOperation;
 };
 
 const appendRuntimeLogInternal = async (input) => {
@@ -131,6 +199,7 @@ const buildPageScript = (entry, dependencySources = []) => {
     '"use strict";',
     `const module = (${code}\n);`,
     `const moduleId = ${moduleId};`,
+    `const runtimeVersion = ${PAGE_RUNTIME_VERSION};`,
     `const token = ${token};`,
     `const permissions = new Set(${permissions});`,
     `const platformData = ${platform};`,
@@ -182,7 +251,7 @@ const buildPageScript = (entry, dependencySources = []) => {
     "  return Object.freeze({ id: String(definition.id || moduleId), version: String(definition.version || '1.0.0'), apiVersion: platform.version, ...methods });",
     "};",
     `let settings = ${settings};`,
-    'const post = (message) => window.postMessage({ source: "kivowiki-mods-page-module", moduleId, token, ...message }, "*");',
+    'const post = (message) => window.postMessage({ source: "kivowiki-mods-page-module", moduleId, runtimeVersion, token, ...message }, "*");',
     "const requestHost = (type, payload = {}) => new Promise((resolve, reject) => { const requestId = String(Date.now()) + Math.random(); const timeoutMs = type === 'data-request' ? 185000 : 10000; const timer = setTimeout(() => { requests.delete(requestId); reject(new Error('宿主请求超时')); }, timeoutMs); requests.set(requestId, { resolve(value) { clearTimeout(timer); resolve(value); }, reject(error) { clearTimeout(timer); reject(error); } }); post({ type, ...payload, requestId }); });",
     "const onHostMessage = (event) => {",
     "  const message = event.data;",
@@ -231,18 +300,27 @@ const syncPageScripts = async () => {
     return syncPromise;
   }
   syncPromise = (async () => {
+    let result = { available: false, changed: false, updatedAt: 0, error: "" };
     do {
       syncAgain = false;
-      await syncPageScriptsInternal();
+      const current = await syncPageScriptsInternal();
+      result = {
+        available: current.available,
+        changed: result.changed || current.changed,
+        updatedAt: Math.max(result.updatedAt, current.updatedAt || 0),
+        error: current.error || ""
+      };
     } while (syncAgain);
+    return result;
   })();
   try { return await syncPromise; } finally { syncPromise = null; }
 };
 
 const syncPageScriptsInternal = async () => {
   if (!canUseUserScripts()) {
-    await chrome.storage.local.set({ kivoPlusUserScripts: false });
-    return;
+    const error = "浏览器尚未开放 User Scripts API，请在扩展详情中开启“允许用户脚本”";
+    await chrome.storage.local.set({ kivoPlusUserScripts: false, kivoPlusUserScriptsError: error });
+    return { available: false, changed: false, updatedAt: 0, error };
   }
 
   try {
@@ -256,6 +334,7 @@ const syncPageScriptsInternal = async () => {
     const desiredByScriptId = new Map(desired.map((entry) => [`${PAGE_SCRIPT_PREFIX}${entry.id}`, entry]));
     const dependencyClosure = (entry) => resolution.dependencyPlans[entry.id] || [];
     const fingerprintFor = (entry) => JSON.stringify({
+      runtimeVersion: PAGE_RUNTIME_VERSION,
       version: entry.version,
       entry: entry.entry,
       settings: entry.settings,
@@ -269,7 +348,7 @@ const syncPageScriptsInternal = async () => {
       dependencyVersions: dependencyClosure(entry).map((dependency) => [dependency.id, dependency.version, dependency.updatedAt])
     });
     const nextFingerprints = Object.fromEntries(desired.map((entry) => [entry.id, fingerprintFor(entry)]));
-    const stored = await chrome.storage.local.get("kivoPlusPageFingerprints");
+    const stored = await chrome.storage.local.get(["kivoPlusPageFingerprints", "kivoPlusPageScriptsUpdatedAt"]);
     const previousFingerprints = stored.kivoPlusPageFingerprints && typeof stored.kivoPlusPageFingerprints === "object" ? stored.kivoPlusPageFingerprints : {};
     const existing = await chrome.userScripts.getScripts();
     const existingIds = new Set(existing.filter((script) => script.id.startsWith(PAGE_SCRIPT_PREFIX)).map((script) => script.id));
@@ -297,17 +376,30 @@ const syncPageScriptsInternal = async () => {
       });
     }
     if (scripts.length) await chrome.userScripts.register(scripts);
-    await chrome.storage.local.set({ kivoPlusUserScripts: true, kivoPlusPageFingerprints: nextFingerprints });
+    const changedScripts = unregisterIds.length > 0 || scripts.length > 0;
+    const updatedAt = changedScripts ? Date.now() : Number(stored.kivoPlusPageScriptsUpdatedAt || 0);
+    await chrome.storage.local.set({
+      kivoPlusUserScripts: true,
+      kivoPlusUserScriptsError: "",
+      kivoPlusPageFingerprints: nextFingerprints,
+      kivoPlusPageScriptsUpdatedAt: updatedAt
+    });
+    return { available: true, changed: changedScripts, updatedAt, error: "" };
   } catch (error) {
     console.error("KivowikiMods User Scripts 注册失败", error);
-    await chrome.storage.local.set({ kivoPlusUserScripts: false });
+    const message = String(error?.message || "浏览器未允许 User Scripts").slice(0, 500);
+    await chrome.storage.local.set({
+      kivoPlusUserScripts: false,
+      kivoPlusUserScriptsError: message
+    });
+    return { available: false, changed: false, updatedAt: 0, error: message };
   }
 };
 
 chrome.runtime.onInstalled.addListener(() => ensureInitialState().then(syncPageScripts).catch(console.error));
 chrome.runtime.onStartup.addListener(() => syncPageScripts().catch(console.error));
 chrome.windows.onRemoved.addListener((windowId) => {
-  if (windowId === managerWindowId) managerWindowId = null;
+  if (windowId === managerWindowId) rememberManagerWindow(null).catch(console.error);
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.state && pageScriptFingerprint(changes.state.oldValue) !== pageScriptFingerprint(changes.state.newValue)) schedulePageScriptSync();
@@ -315,19 +407,21 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "open-manager") {
-    if (managerWindowId != null) {
-      chrome.windows.update(managerWindowId, { focused: true }).catch(() => { managerWindowId = null; });
-      if (managerWindowId != null) return undefined;
-    }
-    chrome.windows.create({ url: chrome.runtime.getURL("options.html"), type: "popup", width: 1080, height: 820, focused: true })
-      .then((window) => { managerWindowId = window.id; })
-      .catch((error) => console.error("KivowikiMods 配置窗口打开失败", error));
+    openManagerWindow();
     return undefined;
   }
 
   if (message?.type === "page-runtime-status") {
-    chrome.storage.local.get("kivoPlusUserScripts")
-      .then((result) => sendResponse({ available: result.kivoPlusUserScripts === true }));
+    // 不信任上一次浏览器会话留下的布尔缓存。用户可能刚刚开启“允许用户脚本”，
+    // 或 Core 已升级但模块本身未变化；重新同步才能恢复并刷新动态运行时。
+    syncPageScripts()
+      .then((result) => sendResponse({
+        available: result.available === true,
+        requiresReload: result.available === true && result.changed === true,
+        updatedAt: result.updatedAt || 0,
+        error: result.error || ""
+      }))
+      .catch((error) => sendResponse({ available: false, error: error.message || "User Scripts 同步失败" }));
     return true;
   }
 
