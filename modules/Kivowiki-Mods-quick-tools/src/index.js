@@ -572,7 +572,8 @@
   }
 `;
   var TOOLBAR_STYLE = `
-  .kq-toolbar { --kq-size: 46px; --kq-offset: 22px; position: fixed; z-index: 2147483646; display: flex; flex-direction: column; gap: 9px; align-items: center; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  /* content.js \u7684\u5168\u5C4F\u5BBF\u4E3B\u9ED8\u8BA4 pointer-events:none\uFF1B\u5DE5\u5177\u680F\u5FC5\u987B\u5728\u81EA\u5DF1\u7684\u8FB9\u754C\u6062\u590D\u4EA4\u4E92\u3002 */
+  .kq-toolbar { --kq-size: 46px; --kq-offset: 22px; position: fixed; z-index: 2147483646; display: flex; flex-direction: column; gap: 9px; align-items: center; pointer-events: auto; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   .kq-toolbar[data-position="right-bottom"] { right: var(--kq-offset); bottom: var(--kq-offset); }
   .kq-toolbar[data-position="left-bottom"] { left: var(--kq-offset); bottom: var(--kq-offset); }
   .kq-toolbar[data-position="right-center"] { right: var(--kq-offset); top: 50%; transform: translateY(-50%); }

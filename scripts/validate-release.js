@@ -5,12 +5,14 @@ const root = path.resolve(__dirname, "..");
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
 const QUICK_TOOLS_ROOT = "modules/Kivowiki-Mods-quick-tools";
 const moduleManifest = JSON.parse(fs.readFileSync(path.join(root, QUICK_TOOLS_ROOT, "module.json"), "utf8"));
+const quickToolsSource = fs.readFileSync(path.join(root, QUICK_TOOLS_ROOT, "src/index.js"), "utf8");
 const dependencyManifest = JSON.parse(fs.readFileSync(path.join(root, "dependencies/core-runtime/dependency.json"), "utf8"));
 const failures = [];
 const expectedQuickToolsEntry = `${QUICK_TOOLS_ROOT}/src/index.js`;
 
 if (manifest.version !== "1.6.0") failures.push("扩展版本不是 1.6.0");
 if (moduleManifest.version !== "2.3.2") failures.push("quick-tools 版本不是 2.3.2");
+if (!quickToolsSource.includes(".kq-toolbar") || !quickToolsSource.includes("pointer-events: auto")) failures.push("quick-tools 工具栏没有恢复 pointer-events 交互");
 if (dependencyManifest.version !== "1.1.0") failures.push("core-runtime 版本不是 1.1.0");
 if (!manifest.content_scripts?.some((script) => script.js?.includes(expectedQuickToolsEntry))) failures.push("manifest.json 未加载 quick-tools 内置入口");
 for (const file of ["options.html", "popup.html"]) {

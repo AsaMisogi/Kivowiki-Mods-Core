@@ -27,7 +27,8 @@ const THEME_SWITCH_STYLE = `
 `;
 
 const TOOLBAR_STYLE = `
-  .kq-toolbar { --kq-size: 46px; --kq-offset: 22px; position: fixed; z-index: 2147483646; display: flex; flex-direction: column; gap: 9px; align-items: center; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  /* content.js 的全屏宿主默认 pointer-events:none；工具栏必须在自己的边界恢复交互。 */
+  .kq-toolbar { --kq-size: 46px; --kq-offset: 22px; position: fixed; z-index: 2147483646; display: flex; flex-direction: column; gap: 9px; align-items: center; pointer-events: auto; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   .kq-toolbar[data-position="right-bottom"] { right: var(--kq-offset); bottom: var(--kq-offset); }
   .kq-toolbar[data-position="left-bottom"] { left: var(--kq-offset); bottom: var(--kq-offset); }
   .kq-toolbar[data-position="right-center"] { right: var(--kq-offset); top: 50%; transform: translateY(-50%); }

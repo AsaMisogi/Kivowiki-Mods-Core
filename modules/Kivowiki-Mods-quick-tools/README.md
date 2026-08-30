@@ -1,6 +1,6 @@
 # Kivowiki-Mods-quick-tools
 
-这是 Kivowiki-Mods 的官方内置页面增强模块，为 KivoWiki 提供低干扰的悬浮快捷工具和分层夜间主题。当前版本为 `2.3.2`。模块入口使用 TypeScript 编写，发布时编译为管理器可以直接加载的单文件 JavaScript，不需要把 Vue 或其他运行时注入 Wiki 页面。
+这是 Kivowiki-Mods 的官方内置页面增强模块，为 KivoWiki 提供低干扰的悬浮快捷工具和分层夜间主题。当前版本为 `2.3.2`。工具栏显式恢复 `pointer-events` 交互，因此不会被 Core 的全屏穿透宿主层意外变成无法悬停或点击的悬浮球。模块入口使用 TypeScript 编写，发布时编译为管理器可以直接加载的单文件 JavaScript，不需要把 Vue 或其他运行时注入 Wiki 页面。
 
 ## 目录
 
