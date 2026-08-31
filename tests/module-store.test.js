@@ -62,6 +62,25 @@ test("GitHub 市场通过 Topic 和原始文件验证根目录包", async () => 
   }
 });
 
+test("登记的 GitHub 仓库即使没有 Topic 也可以进入市场候选", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    if (String(url) === "https://github.com/topics/kivowiki-mods") return new Response("<html>没有仓库</html>", { status: 200 });
+    if (String(url).endsWith("/HEAD/module.json")) return new Response(JSON.stringify({ manifestVersion: 4, type: "module", id: "registered", name: "Kivowiki-Mods-registered", version: "1.0.0", entry: "src/index.js", permissions: [] }), { status: 200 });
+    if (String(url).endsWith("/HEAD/src/index.js")) return new Response("({ mount() {} })", { status: 200 });
+    throw new Error(`unexpected URL ${url}`);
+  };
+  try {
+    const result = await store.discoverGitHubPackages({ refresh: true, repositories: ["https://github.com/author/registered"] });
+    assert.equal(result.items[0].id, "registered");
+    assert.ok(calls.includes("https://raw.githubusercontent.com/author/registered/HEAD/module.json"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("GitHub 仓库导入不依赖 REST API 额度", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];

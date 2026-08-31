@@ -223,13 +223,13 @@
 
 ### 7.1 让 Git 仓库进入市场
 
-进入配置中心或切换市场标签时不会访问 GitHub。只有用户主动点击“探索发现”后，Mod 市场才读取 GitHub 的 `kivowiki-mods` Topic 目录，再通过 Raw 文件服务验证仓库根目录清单和入口。该流程不调用 GitHub REST Search API，也不需要在扩展中保存 Token。开发者应遵循以下规范：
+进入配置中心或切换市场标签时不会访问 GitHub。只有用户主动点击“探索发现”后，Mod 市场才读取 GitHub 的 `kivowiki-mods` Topic 目录，再通过 Raw 文件服务验证仓库根目录清单和入口。Core 内置登记在 `recommendations.js` 中的 GitHub 仓库也会作为候选补充，即使 Topic 尚未同步仍可被验证。该流程不调用 GitHub REST Search API，也不需要在扩展中保存 Token。开发者应遵循以下规范：
 
 - 仓库必须公开，确保默认分支可以下载，并添加 `kivowiki-mods` Topic。
 - 清单使用 `manifestVersion: 4`，`name` 以 `Kivowiki-Mods-` 开头，`id`、`version`、`type` 和 `entry` 均合法。
 - `entry` 指向的文件必须真实存在；`engines.kivowikiMods` 不应排除当前管理器版本。
-- 清单和入口应放在仓库根目录。当前 Topic 探索不递归读取 monorepo 子目录；这类项目可使用推荐、自定义索引或直接 Git 导入。
-- Topic 页面更新或 GitHub 内容服务可能暂时延迟；可先使用“Git 导入”验证安装，不需要为此修改清单。
+- 清单和入口应放在仓库根目录。当前 Topic 探索不递归读取 monorepo 子目录；这类项目可使用推荐登记、自定义索引或直接 Git 导入。
+- Topic 页面更新或 GitHub 内容服务可能暂时延迟；可先使用“Git 导入”验证安装，不需要为此修改清单。再次点击“探索发现”会强制重新读取目录。
 
 Topic 目录、Raw 文件与仓库归档仍可能受到 GitHub 内容服务频控或网络故障影响。直接 Git 导入不消耗 REST Search API 额度，但仍受 GitHub 内容下载限制。
 

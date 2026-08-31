@@ -1011,17 +1011,29 @@
    * Topic 页面和 Raw 文件都不使用 GitHub REST Search API，也不需要在扩展中
    * 保存访问令牌。Topic HTML 不是安装信任来源，下载后的包仍会完整预检。
    */
-  const discoverGitHubPackages = async ({ refresh = false } = {}) => {
-    const cacheKey = "github-topic:kivowiki-mods";
+  const discoverGitHubPackages = async ({ refresh = false, repositories = [] } = {}) => {
+    const registeredRepositories = (Array.isArray(repositories) ? repositories : [])
+      .filter((repository) => typeof repository === "string" && repository.trim()).sort();
+    const cacheKey = `github-topic:kivowiki-mods:${registeredRepositories.join("|")}`;
     const cached = discoveryCache.get(cacheKey);
     if (!refresh && cached && cached.expiresAt > Date.now()) return cloneJson(cached.value);
     if (cached) discoveryCache.delete(cacheKey);
 
-    const response = await fetch("https://github.com/topics/kivowiki-mods", {
-      credentials: "omit",
-      redirect: "follow",
-      headers: { Accept: "text/html" }
-    });
+    let response;
+    try {
+      response = await fetch("https://github.com/topics/kivowiki-mods", {
+        credentials: "omit",
+        redirect: "follow",
+        headers: { Accept: "text/html" }
+      });
+    } catch (error) {
+      if (!registeredRepositories.length) throw error;
+      // 已登记仓库不依赖 Topic 页面可用性，继续走 Raw 验证。
+      response = new Response("", { status: 200 });
+    }
+    if (!response.ok && registeredRepositories.length) {
+      response = new Response("", { status: 200 });
+    }
     if (!response.ok) {
       const error = new Error(response.status === 429
         ? "GitHub 暂时限制了社区目录访问，请稍后重试；已知仓库仍可通过“Git 导入”安装"
@@ -1036,19 +1048,31 @@
 
     // data-hovercard-url 是仓库链接携带的语义属性。正则回退让没有
     // DOMParser 的测试环境也能使用相同的严格 owner/repository 提取规则。
-    const repositories = new Map();
+    const candidatesByRepository = new Map();
     if (typeof DOMParser === "function") {
       const document = new DOMParser().parseFromString(html, "text/html");
       for (const link of document.querySelectorAll('[data-hovercard-type="repository"][data-hovercard-url$="/hovercard"]')) {
         const match = String(link.getAttribute("data-hovercard-url") || "").match(/^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/hovercard$/);
-        if (match) repositories.set(`${match[1]}/${match[2]}`.toLocaleLowerCase(), { owner: match[1], name: match[2] });
+        if (match) candidatesByRepository.set(`${match[1]}/${match[2]}`.toLocaleLowerCase(), { owner: match[1], name: match[2] });
       }
     }
     for (const match of html.matchAll(/<[^>]+>/g)) {
       const tag = match[0];
       if (!/data-hovercard-type=["']repository["']/i.test(tag)) continue;
       const hovercard = tag.match(/data-hovercard-url=["']\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/hovercard["']/i);
-      if (hovercard) repositories.set(`${hovercard[1]}/${hovercard[2]}`.toLocaleLowerCase(), { owner: hovercard[1], name: hovercard[2] });
+      if (hovercard) candidatesByRepository.set(`${hovercard[1]}/${hovercard[2]}`.toLocaleLowerCase(), { owner: hovercard[1], name: hovercard[2] });
+    }
+
+    // Topic 页面不是稳定的发布目录。内置登记仓库作为候选补充，仍须经过
+    // Raw 清单、入口和兼容性校验，不能绕过市场的包验证边界。
+    for (const repository of repositories) {
+      try {
+        const parsed = new URL(String(repository || ""));
+        if (parsed.protocol !== "https:" || !["github.com", "www.github.com"].includes(parsed.hostname.toLowerCase())) continue;
+        const [owner, rawName] = parsed.pathname.split("/").filter(Boolean);
+        const name = rawName?.replace(/\.git$/i, "");
+        if (owner && name) candidatesByRepository.set(`${owner}/${name}`.toLocaleLowerCase(), { owner, name });
+      } catch { /* 推荐配置中的无效地址不应阻断其他仓库。 */ }
     }
 
     const validateRepository = async ({ owner, name }) => {
@@ -1092,7 +1116,7 @@
     };
 
     const results = [];
-    const candidates = [...repositories.values()].slice(0, 40);
+    const candidates = [...candidatesByRepository.values()].slice(0, 60);
     // 限制并发，避免 Topic 较大时同时向 Raw 服务发出过多请求。
     for (let offset = 0; offset < candidates.length; offset += 4) {
       const batch = await Promise.all(candidates.slice(offset, offset + 4).map(validateRepository));

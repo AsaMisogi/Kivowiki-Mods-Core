@@ -13,7 +13,7 @@ test("市场只在用户主动探索后请求 GitHub", () => {
   assert.doesNotMatch(optionsHtml, /market-auto-load/);
   assert.doesNotMatch(optionsJs, /autoLoadMarket/);
   assert.doesNotMatch(optionsJs, /if \(target === "market"\)/);
-  assert.match(optionsJs, /marketExploreButton\.addEventListener\("click", \(\) => searchMarket/);
+  assert.match(optionsJs, /marketExploreButton\.addEventListener\("click", \(\) => searchMarket\(\{ force: true, page: 1 \}\)/);
   assert.match(optionsJs, /if \(!marketHasLoaded\).*请先点击“探索发现”/s);
   assert.match(optionsJs, /marketSearchInput\.addEventListener\("input".*searchMarket\(\{ page: 1 \}\)/s);
   assert.doesNotMatch(optionsJs, /marketSortInput\.addEventListener\("change".*force: true/s);
@@ -29,6 +29,7 @@ test("编辑精选内置 beautify 且展示时不发起网络请求", () => {
       title: "Kivowiki-Mods-beautify",
       description: "为 KivoWiki 提供组件动效、页面主题、首页布局、昼夜背景和字体自定义。",
       repository: "https://github.com/AsaMisogi/Kivowiki-Mods-beautify",
+      version: "1.5.2",
       type: "module"
     }]
   );

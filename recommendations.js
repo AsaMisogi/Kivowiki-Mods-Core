@@ -2,7 +2,8 @@
  * Kivowiki-Mods 编辑精选配置。
  *
  * 发布者可以在下面添加对象。repository 填公开 GitHub/GitLab 仓库页，
- * packageUrl 可用于直接下载 ZIP 或 JSON 包；两者都为空时只展示介绍，不显示安装按钮。
+ * version 用于准确显示已安装/可升级状态；packageUrl 可用于直接下载 ZIP 或 JSON 包，
+ * 两者都为空时只展示介绍，不显示安装按钮。
  * 该文件为空数组时设置页不会显示推荐区，不会影响扩展运行。
  */
 globalThis.KivowikiModsRecommendations = [
@@ -11,6 +12,7 @@ globalThis.KivowikiModsRecommendations = [
     title: "Kivowiki-Mods-beautify",
     description: "为 KivoWiki 提供组件动效、页面主题、首页布局、昼夜背景和字体自定义。",
     repository: "https://github.com/AsaMisogi/Kivowiki-Mods-beautify",
+    version: "1.5.2",
     type: "module"
   },
   // {

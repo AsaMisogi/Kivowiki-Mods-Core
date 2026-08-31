@@ -281,7 +281,11 @@
       const stats = [item.updatedAt && `更新 ${new Date(item.updatedAt).toLocaleDateString("zh-CN")}`, item.createdAt && `发布 ${new Date(item.createdAt).toLocaleDateString("zh-CN")}`, item.stars > 0 && `Star ${Number(item.stars).toLocaleString("zh-CN")}`, item.downloadCount > 0 && `下载 ${Number(item.downloadCount).toLocaleString("zh-CN")}`].filter(Boolean).join(" · ");
       info.append(titleRow, textNode("p", "module-description", item.description), textNode("p", "module-meta", `作者：${item.author}${stats ? ` · ${stats}` : ""}`));
       const actions = document.createElement("div"); actions.className = "market-card-actions";
-      const action = document.createElement("button"); action.type = "button"; action.className = "primary-button"; action.textContent = "安装";
+      const action = document.createElement("button"); action.type = "button"; action.className = "primary-button";
+      const installState = getMarketInstallState(item);
+      action.textContent = installState.label;
+      action.disabled = installState.disabled;
+      if (installState.disabled) action.classList.add("is-installed");
       action.addEventListener("click", async () => {
         try {
           if (item.packageUrl && !await requestOptionalHostPermission(item.packageUrl)) throw new Error("未获得访问该来源的浏览器权限");
@@ -291,6 +295,9 @@
               ? KivowikiModsStore.fetchPackageUrl(item.packageUrl, { registry: item.sourceUrl || "market" }, options)
               : KivowikiModsStore.fetchRepositoryPackage(item.repository, item.packagePath || "", options)
           });
+          render();
+          renderRecommendations();
+          searchMarket({ page: marketPage });
         } catch (error) { showToast(`市场安装失败：${error.message}`); }
       });
       actions.append(action);
@@ -320,7 +327,9 @@
         let githubItems = [];
         let githubError = null;
         try {
-          githubItems = (await KivowikiModsStore.discoverGitHubPackages({ refresh: force })).items;
+          const recommendationRepositories = (Array.isArray(globalThis.KivowikiModsRecommendations) ? globalThis.KivowikiModsRecommendations : [])
+            .map((item) => item?.repository).filter(Boolean);
+          githubItems = (await KivowikiModsStore.discoverGitHubPackages({ refresh: force, repositories: recommendationRepositories })).items;
         } catch (error) {
           githubError = error;
         }
@@ -400,7 +409,12 @@
         const button = document.createElement("button");
         button.className = "outline-button";
         button.type = "button";
-        button.textContent = "安装";
+        const installState = item.id
+          ? getMarketInstallState({ id: item.id, type: item.type || "module", version: item.version || "" })
+          : { label: "安装", disabled: false };
+        button.textContent = installState.label;
+        button.disabled = installState.disabled;
+        if (installState.disabled) button.classList.add("is-installed");
         button.addEventListener("click", async () => {
           try {
             if (item.packageUrl && !await requestOptionalHostPermission(source)) throw new Error("未获得访问该来源的浏览器权限");
@@ -410,6 +424,9 @@
                 ? KivowikiModsStore.fetchPackageUrl(item.packageUrl, { registry: "recommendations" }, options)
                 : KivowikiModsStore.fetchRepositoryPackage(item.repository, "", options)
             });
+            render();
+            renderRecommendations();
+            if (marketHasLoaded) searchMarket({ page: marketPage });
           } catch (error) { showToast(`推荐安装失败：${error.message}`); }
         });
         actions.append(button);
@@ -712,6 +729,21 @@
   const getImportedModule = (id) => state.imported.find((item) => item.id === id);
   const getImportedDependency = (id) => state.dependencies.find((item) => item.id === id);
   const getImportedPackage = (id) => getImportedModule(id) || getImportedDependency(id);
+  const getInstalledMarketPackage = (item) => {
+    const collection = item.type === "dependency" ? state.dependencies : state.imported;
+    const matches = collection.filter((installed) => installed.id === item.id);
+    return item.type === "dependency"
+      ? matches.sort((left, right) => KivowikiModsPlatform.compareVersions(right.version, left.version))[0]
+      : matches[0];
+  };
+  const getMarketInstallState = (item) => {
+    const installed = getInstalledMarketPackage(item);
+    if (!installed) return { label: "安装", disabled: false };
+    if (!item.version) return { label: `已安装 v${installed.version}`, disabled: true, installedVersion: installed.version };
+    const comparison = KivowikiModsPlatform.compareVersions(item.version, installed.version);
+    if (comparison > 0) return { label: `升级到 v${item.version}`, disabled: false, installedVersion: installed.version };
+    return { label: `已安装 v${installed.version}`, disabled: true, installedVersion: installed.version };
+  };
   const getExactPackage = (module) => module.type === "dependency"
     ? state.dependencies.find((item) => KivowikiModsPlatform.packageKey(item) === KivowikiModsPlatform.packageKey(module))
     : state.imported.find((item) => item.id === module.id);
@@ -1179,6 +1211,8 @@
       showToast(`${installed.name} v${installed.version} 已安装`);
       pendingInspection = null;
       reviewNextInstallation();
+      renderRecommendations();
+      if (marketHasLoaded) searchMarket({ page: marketPage });
     } catch (error) { showToast(`安装失败：${error.message}`); confirmInstallButton.disabled = false; }
   });
   document.querySelectorAll("[data-install-close]").forEach((node) => node.addEventListener("click", closeInstall));
@@ -1207,7 +1241,8 @@
   document.getElementById("open-logs").addEventListener("click", openLogs);
   logFilter.addEventListener("change", renderLogs);
   document.getElementById("clear-logs").addEventListener("click", async () => { runtimeLogs = []; await chrome.storage.local.set({ runtimeLogs: [] }); renderLogs(); render(); showToast("运行日志已清空"); });
-  marketExploreButton.addEventListener("click", () => searchMarket({ force: !marketHasLoaded, page: 1 }));
+  // 每次点击都重新读取目录，避免上次失败或空结果让按钮看起来失效。
+  marketExploreButton.addEventListener("click", () => searchMarket({ force: true, page: 1 }));
   marketRefreshButton.addEventListener("click", () => {
     if (!marketHasLoaded) { showToast("请先点击“探索发现”读取社区目录"); return; }
     searchMarket({ force: true, page: 1 });
