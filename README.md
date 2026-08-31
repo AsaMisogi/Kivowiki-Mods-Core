@@ -24,7 +24,7 @@ Kivowiki-Mods 是用于 [基沃托斯古书馆](https://kivo.wiki/) 的 Chromium
 
 传送门：
 
-[https://chromewebstore.google.com/detail/kivowiki-mods/](https://chromewebstore.google.com/detail/kivowiki-mods/)
+[https://chromewebstore.google.com/detail/kivowiki-mods/jcdbcjnphpejofgofkjhnkpgmfeidlec](https://chromewebstore.google.com/detail/kivowiki-mods/jcdbcjnphpejofgofkjhnkpgmfeidlec)
 
 
 页面模式模块需要 User Scripts API；Chrome 138 及以上版本还要在扩展详情页打开“允许用户脚本”。
