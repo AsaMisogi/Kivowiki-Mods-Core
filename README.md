@@ -1,184 +1,216 @@
-# Kivowiki-Mods
+# Kivowiki-Mods Core
 
-Kivowiki-Mods（中文名：古书馆的秘密工房）是一个面向 Chromium 系浏览器的 Manifest V3 模块管理器，为基沃托斯古书馆提供可独立启停的增强模块。
+Kivowiki-Mods 是用于 [基沃托斯古书馆](https://kivo.wiki/) 的 Chromium 扩展和本地模块管理器。它负责安装、启停和更新模块，处理依赖与配置，并在模块运行异常时隔离故障。
 
-项目地址：[https://kivo.wiki/](https://kivo.wiki/)。作者：朝禊ASOGI，B站空间：[https://space.bilibili.com/315312](https://space.bilibili.com/315312)。
+当前 Core 版本为 `1.6.1`，支持 Chrome、Edge 及其他兼容 Manifest V3 和 User Scripts API 的 Chromium 浏览器。
 
+## 主要功能
 
-## 项目定位
+- 从 JSON、ZIP、项目文件夹或公开 GitHub/GitLab 仓库安装模块与依赖。
+- 安装前检查清单、权限、来源、签名、依赖、冲突和常见风险代码。
+- 独立启停、配置、导出、更新和回滚社区模块。
+- 支持依赖多版本共存、传递依赖、版本范围、锁定选择和冲突阻止。
+- 提供页面模式和严格沙箱模式；连续启动失败的模块可自动隔离。
+- 提供按需市场、自定义 HTTPS 索引源、内置推荐和 Git 仓库入口。
+- 模块文件、设置、历史修订和用户选择的媒体均保存在本机。
 
-- 支持 Microsoft Edge、Google Chrome 及其他兼容 Manifest V3 的 Chromium 浏览器。
-- 管理器负责模块与依赖注册、启停、权限提示、安装预检、更新检查、Mod 市场、推荐配置、自动补齐依赖、多版本解析、锁文件、冲突阻止、接口契约、资源占用提示、版本历史、崩溃隔离、日志和配置持久化。
-- 模块清单名称统一使用 `Kivowiki-Mods-` 前缀；社区模块与依赖可通过本地 JSON、ZIP 或公开 GitHub/GitLab 仓库导入。
-- 配置写入 `chrome.storage.local`，不上传到服务器，也不依赖登录。
-- 内置 `Kivowiki-Mods-core-runtime` 提供公开只读 KivoWiki API、页面内缓存和资源 URL 规范化；不包含认证信息、Token、写入接口或账号能力。
+扩展内置 `Kivowiki-Mods-quick-tools`，提供返回顶部、打开站内原生角色图鉴和夜间模式等常用操作。
 
-## 目录
+## 安装
 
-```text
-Kivowiki-Mods/
-├─ manifest.json             # MV3 扩展清单
-├─ background.js             # 安装初始化、User Scripts 和配置窗口
-├─ platform.js               # 清单、权限、版本范围、依赖和平台 API 契约
-├─ content.js                # 页面模块宿主与能力上下文
-├─ data-client.js            # 与具体站点无关的只读数据请求能力
-├─ module-store.js           # IndexedDB 模块资源仓库、导入和备份
-├─ dependencies/core-runtime/# 内置共享数据与缓存依赖
-├─ modules/Kivowiki-Mods-quick-tools/ # 内置快捷工具模块项目
-│  ├─ module.json
-│  ├─ README.md
-│  └─ src/                   # 入口、配置和后续功能分层
-├─ options.html/css/js       # 配置中心、市场与本地包管理
-├─ recommendations.js        # 发布者维护的编辑精选配置
-├─ popup.html/css/js         # 工具栏弹窗
-├─ examples/hello-module/    # 可压缩导入的完整模块示例
-└─ docs/
-   ├─ module-development.md  # 模块开发规范
-   ├─ module-security.md     # 权限、签名、来源与审核规范
-   ├─ platform-data-contract.md
-   └─ technical-validation.md
-```
+### Chrome Web Store
 
-## 安装到 Edge / Chrome
+商店版本可直接从 Chrome Web Store 安装，后续更新由浏览器处理。页面模式模块需要 User Scripts API；Chrome 138 及以上版本还要在扩展详情页打开“允许用户脚本”。
 
-1. 打开 `edge://extensions` 或 `chrome://extensions`。
-2. 开启页面中的“开发人员模式”。Chrome 138+ 还需要进入本扩展的“详细信息”，打开“允许用户脚本”；Chrome 120 至 137 通常只需要保持开发人员模式开启。浏览器不允许扩展替用户自动打开这个安全选项；如果尚未开启，进入 KivoWiki 后会出现小提示，可点击按钮直达本扩展详情页。
-3. 点击“加载解压缩的扩展”或“加载已解压的扩展”。
-4. 选择本项目根目录，即包含 `manifest.json` 的目录。
-5. 打开或刷新目标 Wiki 页面，确认页面左侧出现 Kivowiki-Mods 入口。
+### 从源码加载
 
-修改扩展文件后，在扩展管理页点击扩展卡片上的刷新按钮，再刷新目标 Wiki 页面。导入或切换页面模式后，如果当前页面没有立即出现模块，刷新一次页面即可让 Chrome 重新注入动态 User Script。配置页也可以从浏览器工具栏的 Kivowiki-Mods 图标打开。
+1. 下载或克隆本仓库。
+2. 打开 `chrome://extensions` 或 `edge://extensions`。
+3. 开启“开发者模式”。
+4. 选择“加载已解压的扩展”，然后选择包含 `manifest.json` 的仓库根目录。
+5. Chrome 138 及以上版本进入扩展详情页，打开“允许用户脚本”。
+6. 打开或刷新 [KivoWiki](https://kivo.wiki/)，页面左侧会出现 Kivowiki-Mods 入口。
 
-## 使用说明
+修改源码后，需要先在扩展管理页重新加载扩展，再刷新已经打开的 KivoWiki 页面。
 
-### 配置中心与 Mod 市场
+## 使用
 
-配置中心分为“模块、依赖、市场、设置”四个标签页。模块和依赖均支持搜索、本地单文件导入、整个文件夹导入、Git 仓库导入、更新检查、启停、版本历史、导出与移除。总包上限 100 MB、单文件上限 32 MB、入口脚本上限 4 MB；资源与历史版本保存在本地 IndexedDB，不占用设置存储的小配额。
+点击浏览器工具栏中的 Kivowiki-Mods 图标可以查看运行概况并打开配置中心。配置中心分为四部分：
 
-配置中心左侧导航按“模块、依赖、市场、设置”分组，窄屏会自动变成顶部横向导航。设置中的“显示侧边插件入口”只控制 KivoWiki 左侧的 Kivowiki-Mods 图标，不会停用模块；工具栏弹窗也提供同一个快捷开关。打开配置中心或切换到市场标签不会请求 GitHub API，内置推荐会直接离线显示。只有用户主动点击“探索发现”后，管理器才搜索和验证 GitHub 社区项目；首次探索前点击刷新也不会联网。
+- **模块**：管理已安装功能模块，支持搜索、配置、启停、导入、更新、历史回滚、导出和移除。
+- **依赖**：查看模块使用的共享能力包及其版本和依赖关系。
+- **市场**：查看内置推荐、读取 GitHub 社区目录，或合并自己添加的 HTTPS 索引源。
+- **设置**：控制页面入口、安全模式、崩溃隔离和自定义市场源。
 
-“Mod 市场”提供两类发现入口：GitHub 公共仓库搜索，以及用户自己添加的 HTTPS JSON 索引源。市场搜索结果只是一份可供筛选的公开元数据；安装时才下载仓库或包地址，并复用同一套清单校验、签名验证、静态风险扫描、前置依赖检查和用户确认流程。不会因为出现在搜索结果中就自动信任，也不会静默安装。第一次访问自定义源或外部包地址时，浏览器会弹出单独的可选站点权限询问，拒绝权限不会影响已经安装的模块。
+配置中心顶部版本号可以打开 Core 仓库。由 GitHub/GitLab 安装且带有有效来源信息的模块，会在模块卡片中显示“查看仓库”；推荐和市场结果也提供同样的入口。
 
-自定义源最小格式如下：
+### 市场和 Git 导入
+
+打开配置中心、切换到市场或查看推荐不会联网。只有主动点击“探索发现”后，扩展才读取 GitHub 的 `kivowiki-mods` Topic 页面，并通过 Raw 文件服务验证候选仓库根目录中的模块清单和入口文件。该流程不调用 GitHub REST Search API，也不需要 Token。
+
+市场中的搜索、类型筛选、排序和分页均在本地执行，不会因每次输入或切换选项重复请求 GitHub。单个仓库校验失败只会跳过该仓库，不影响其他结果。
+
+点击推荐、市场结果或 Git 仓库导入的“安装”后，管理器会打开下载状态窗口。服务器提供总大小时显示百分比和已下载容量；没有总大小时显示实时接收容量。下载可主动取消，超过 90 秒、网络失败、HTTP 错误或包体超过 100 MB 时会保留明确的错误提示。只有下载完成并通过本地预检后，才会打开安装确认界面。
+
+要让仓库出现在社区探索结果中：
+
+1. 使用公开 GitHub 仓库，并在仓库根目录提供有效的 `module.json`、`dependency.json` 或兼容清单。
+2. 在仓库 Topics 中添加 `kivowiki-mods`。
+3. 确认清单声明的入口和可选配置文件已提交到默认分支。
+4. 新发布的社区包使用清单 v4，并声明与 Core 和平台 API 兼容的版本范围。
+
+Topic 目录不是审核名单。市场结果仍需在安装时下载完整包，并经过与本地导入相同的预检和用户确认。未使用 Topic、采用 monorepo 子目录或尚未收录的项目，可以直接在模块页使用“Git 仓库”导入。
+
+GitHub 网页、Raw 文件和仓库归档仍可能受网络或 GitHub 内容服务频控影响。直接 Git 导入不消耗 REST Search API 额度，但不能绕过 GitHub 自身的内容下载限制。
+
+### 本地数据与备份
+
+- 管理器状态和小型设置保存在 `chrome.storage.local`。
+- 模块文件、用户媒体和最近三份历史修订保存在 IndexedDB。
+- 配置和模块数据不会由 Core 主动上传。
+- “导出社区备份”当前导出社区功能模块及其文件和设置；社区依赖、管理器偏好和内部锁定状态不属于完整设备备份。
+
+## 安全边界
+
+社区模块有两种运行方式：
+
+- `page`：运行在 KivoWiki 页面环境，可实现完整页面增强，也能够接触页面 DOM 和页面自身可用的浏览器能力。只应安装可信代码。
+- `sandbox`：运行在扩展沙箱中，不能访问 KivoWiki DOM、扩展 API 或网络，只能使用受限 UI、设置和包内资源能力。
+
+全局安全模式会强制社区模块使用严格沙箱。模块的权限声明用于安装提示和宿主能力控制，不能把页面模式变成浏览器进程级沙箱。
+
+数字签名可以证明签名后的包未被修改；首次自签名不能证明作者现实身份。仓库来源、作者和审核信息也可能由包作者自行声明。安装第三方模块前应检查仓库、权限和代码。
+
+Core 不向模块提供认证、账号、写入或后台管理接口，也不会在扩展中保存 GitHub Token。
+
+## 模块开发
+
+新模块建议从 [`examples/hello-module`](examples/hello-module/) 开始。社区模块应做到可独立安装、停用和清理，不依赖 Core 的私有存储结构、消息格式或 DOM 实现。
+
+最小清单示例：
 
 ```json
 {
-  "format": "kivowiki-mods-registry",
-  "version": 1,
-  "name": "我的社区源",
-  "items": [
-    {
-      "id": "reading-progress",
-      "name": "Kivowiki-Mods-reading-progress",
-      "version": "1.2.0",
-      "type": "module",
-      "description": "显示文章阅读进度。",
-      "author": "社区作者",
-      "repository": "https://github.com/example/kivowiki-mods-reading-progress"
-    },
-    {
-      "id": "shared-renderer",
-      "name": "Kivowiki-Mods-shared-renderer",
-      "version": "2.0.0",
-      "type": "dependency",
-      "description": "提供共享渲染能力。",
-      "packageUrl": "https://downloads.example.com/shared-renderer-2.0.0.zip"
-    }
-  ]
+  "manifestVersion": 4,
+  "type": "module",
+  "id": "reading-progress",
+  "name": "Kivowiki-Mods-reading-progress",
+  "version": "1.0.0",
+  "description": "显示当前页面的阅读进度。",
+  "author": "Your Name",
+  "mode": "page",
+  "entry": "src/index.js",
+  "permissions": [
+    { "id": "page.read", "reason": "读取页面滚动位置。" },
+    { "id": "page.modify", "reason": "显示阅读进度条。" }
+  ],
+  "dependencies": {},
+  "engines": {
+    "kivowikiMods": "^1.6.1",
+    "api": "^1.1.0"
+  }
 }
 ```
 
-每个条目需要 `id`、`name`、`version`、`type`、`description` 和 `repository` 或 `packageUrl`。添加源时会立即读取并验证格式，索引本身只用于展示，真实清单中的 ID、类型和版本仍以下载后的包为准；故意伪造索引信息不能绕过安装预检。建议使用 HTTPS、固定版本包地址，并在源服务器配置正确的 CORS 响应头。
+页面模式入口是一个返回模块对象的 JavaScript 表达式：
 
-`recommendations.js` 是发布者维护的编辑精选列表，当前内置推荐 `Kivowiki-Mods-beautify`。推荐卡片读取扩展内的静态配置，查看时不会访问 GitHub；用户点击“安装”后才下载对应公开仓库并进入完整预检。以后可继续添加 `title`、`description`、`repository`、`packageUrl` 和可选的 `type`。
+```js
+({
+  mount(context) {
+    const bar = context.document.createElement("div");
+    bar.className = "reading-progress";
+    context.document.body.append(bar);
 
-点击“探索发现”后，市场目录会从 GitHub 搜索名称、描述和 README 中提到 `Kivowiki-Mods` 的公开仓库。根目录包通过 GitHub 原始文件服务读取清单并确认入口；仅当根目录没有包时，才读取 Git tree 查找 monorepo 子目录。只有清单版本、名称前缀、ID、类型、入口文件和 `engines` 兼容性都通过，项目才会显示。这样可显著减少 GitHub 未登录 REST API 的额度消耗，同时不会省略安装前的完整安全预检。市场支持按最近更新、最近发布、Release 附件下载量和 Star 数排序；每页显示 12 个经过验证的候选项目，也可以打开对应仓库页面查看源码。
+    const update = () => {
+      const page = context.document.documentElement;
+      const max = page.scrollHeight - context.window.innerHeight;
+      bar.style.width = `${max > 0 ? context.window.scrollY / max * 100 : 0}%`;
+    };
 
-要让自己的 Git 仓库被“探索发现”找到：
+    context.window.addEventListener("scroll", update, { passive: true });
+    update();
+    context.onCleanup(() => {
+      context.window.removeEventListener("scroll", update);
+      bar.remove();
+    });
+  }
+})
+```
 
-1. 在公开 GitHub 仓库中提交 `module.json` 或 `dependency.json`，根目录和 monorepo 子目录都可以。
-2. 使用 `manifestVersion: 4`，让 `name` 以 `Kivowiki-Mods-` 开头，并保证 `id`、`version`、`type` 和 `entry` 合法。
-3. 确保清单声明的入口文件真实存在，且 `engines.kivowikiMods` 不排除当前管理器版本。
-4. 在仓库名称、描述或 README 中写明 `Kivowiki-Mods`，帮助 GitHub 公共搜索找到项目。
-5. 发布新版本时更新语义化版本，并建议创建 GitHub Release 和 ZIP 附件；附件下载量可用于市场排序。
+`mount()` 中创建的 DOM、事件、定时器、观察器、样式和 Object URL 必须在 `context.onCleanup()` 中释放。设置变化优先使用 `context.onSettingsChange()` 更新现有界面，避免重复挂载。
 
-市场识别不是官方审核或安全认证。仓库被发现只说明它符合公开格式和兼容性筛选，安装时仍会执行完整预检，用户仍需自己审阅代码并承担第三方模块风险。
+### Context API 摘要
 
-带 `source.repository` 的包可以单独或批量检查更新。GitHub 导入下载默认分支的 `HEAD` 归档，并从 GitHub 重定向后的归档地址记录精确提交；不先请求 GitHub REST API，因此即使搜索额度耗尽仍可导入公开仓库。GitLab 导入记录实际默认分支和当前提交。更新包仍会经过完整预检并由用户确认。模块可在 `dependencySources` 中为依赖提供公开仓库地址，管理器发现缺失依赖后会自动下载并把它们逐个加入同一审核队列，不会静默安装。
+| 能力 | 用途 |
+| --- | --- |
+| `document` / `window` / `site` | 当前 KivoWiki 页面和路由信息，仅页面模式可用 |
+| `settings` / `saveSettings()` | 读取和保存当前模块设置 |
+| `storage` | 当前模块隔离的本地业务存储 |
+| `onSettingsChange()` | 接收设置变化 |
+| `onCleanup()` | 登记停用和重载时的清理函数 |
+| `dependencies` | 读取清单声明的依赖实例 |
+| `assets` / `userAssets` | 读取包内资源或用户主动选择的本地媒体 |
+| `api` / `data` | 获得授权后的通用只读请求能力 |
+| `log()` | 写入管理器诊断日志，不得记录隐私和凭据 |
 
-GitHub 未登录 REST API 有独立的低额度限制，频繁刷新市场可能暂时触发 HTTP 403。管理器会显示“请求额度已用完”和预计恢复时间；此时无需改动模块，也不要反复刷新。等待恢复后可继续搜索，或直接在模块页使用“Git 导入”粘贴公开仓库地址，直接导入不受该 REST API 额度影响。新公开的仓库还可能需要等待 GitHub 搜索索引同步。
+严格沙箱使用受限的 `context.ui` 渲染视图，不提供页面 DOM 和网络。配置脚本运行在独立配置 iframe 中，只能操作自己的文档、设置和允许的资源。
 
-选择安装包后会先出现一页简洁预检，列出权限用途、数字签名、发布者、来源、审核声明、依赖、冲突和静态风险特征。无签名、身份未认证、签名异常、未知权限或暂缺依赖都不会阻止安装，只会显示状态。用户确认后才写入；依赖或兼容条件未满足的模块会处于“已安装但暂不运行”，条件满足后即可启用。
+### KivoWiki 公开只读数据
 
-左侧的页面入口在鼠标靠近时展开，点击后在独立窗口打开配置中心。该入口使用 Shadow DOM，避免管理器的字体、按钮和布局影响 KivoWiki 本身。
+需要公共 Wiki 数据时，模块可声明 `core-runtime` 依赖并申请 `network.read` 权限：
 
-配置中心顶部的“导出社区备份”会导出全部社区模块；模块或依赖行的“导出”只导出当前包。备份包含文件、元数据和设置。备份加入本机设置后已不再等同于作者原始签名包，因此导出的备份不会冒用原签名。
+```json
+{
+  "dependencies": { "core-runtime": "^1.1.0" }
+}
+```
 
-再次导入相同 ID 的模块即执行升级、降级或重装。依赖使用 `ID@版本` 独立存储，同一依赖的多个版本可以共存；每个模块选择满足版本范围的最高版本，并优先复用锁文件中的既有选择。用户确认安装新依赖版本后会重新生成锁文件，使主动升级立即生效。写入相同精确版本前自动保留旧修订，最多保留 3 份；“版本历史”可一键回滚。
+通过 `context.dependencies["core-runtime"]` 使用以下稳定语义方法：
 
-锁文件仍会在本地自动生成并用于运行时解析，但配置中心不再提供单独的“导出锁文件”按钮。对普通用户而言，锁文件不是可以直接打开使用的模块包，单独导出容易与社区备份混淆；真正需要迁移设备时请使用“导出社区备份”，它包含模块文件、配置和设置。锁文件会随状态一起保存，避免管理器启动时因为仓库出现新版本而自动漂移。
+- `kivoApi.list(resource, query)`：读取一页公开资源。
+- `kivoApi.get(resource, id)`：读取单项公开资源。
+- `kivoApi.listAll(resource, query, options)`：按服务端分页信息批量读取，并支持并发上限和进度回调。
+- `resourceUrl(value)`：规范化公开静态资源地址。
+- `kivoApi.listStudents()`、`getStudent()` 等常用语义方法。
 
-### 内置“快捷工具”
+公开资源包括学生、学校、关系、物品、模型、Spine、文章、新闻、漫画、画廊、音乐、时间轴和公告。接口只支持只读请求，不携带凭据，带有超时、有限重试、请求合并和缓存。不要依赖服务端未公开字段，不要调用认证、账号、上传、统计或基础设施接口。完整约束见 [平台数据能力契约](docs/platform-data-contract.md)。
 
-启用后，KivoWiki 页面右下角会出现以下快捷操作：
+## 本地开发
 
-- 最下方的向上箭头：平滑返回页面顶部。
-- 上方图鉴按钮：直接点击 KivoWiki 自带的“角色图鉴”入口，打开站内原生图鉴窗口。
-- 中间工具面板图标：展开或收起更多工具，展开后会变成 X；它和返回顶部按钮的方向箭头明显区分。
-- 展开的夜间模式按钮：切换保留背景图的分层深色主题。
+需要 Node.js 18 或更高版本。
 
-快捷工具配置支持分别决定按钮是否折叠、位置、按钮大小、边缘间距和实时预览。角色图鉴按钮默认固定显示在返回顶部按钮上方；模块会优先触发顶部菜单内部真正可点击的文字链接，并兼容侧边栏和主页“拿起角色图鉴”入口，不缓存可能失效的旧节点。模块本身不绘制图鉴或重复请求角色 API，筛选、分页、资料跳转和后续站点升级全部由 KivoWiki 原生窗口负责。夜间模式设置按浏览器本地保存，刷新后保持；切换时会临时关闭站点颜色过渡，让文字和图标立即切换到目标颜色；主题适配 Naive UI、Tailwind 内容色类、Markdown、首页消息气泡、角色地形图标与联系页文本。
+```bash
+npm run build
+npm test
+npm run check
+```
 
-内置模块当前为 `quick-tools 2.3.2`，悬浮工具栏在全屏宿主中显式恢复指针交互，避免宿主的穿透层规则让按钮失去点击和悬停响应。此前已修复其实际目录名与扩展清单、配置中心和弹窗页面路径不一致的问题。现在所有加载路径、构建脚本、发布校验和文档统一指向 `modules/Kivowiki-Mods-quick-tools/`；本次 Core `1.6.0` 在此基础上增加标签式管理界面、按需市场探索、推荐、自定义源设置和文件夹导入能力。
+- `npm run build` 构建内置 quick-tools，并覆盖其 `src/index.js` 与 `src/config.js` 产物。
+- `npm test` 运行 Node 测试。
+- `npm run check` 安装 quick-tools 的锁定依赖、重新构建、运行测试和发布结构校验，并整理子项目依赖目录。
 
-## 安全设计
+主要目录：
 
-### 权限最小化
+```text
+dependencies/                 内置共享依赖
+modules/                      内置模块源码与构建产物
+examples/hello-module/        社区模块示例
+docs/                         开发、安全、数据和发布验证文档
+platform.js                   版本、权限、依赖和兼容性解析
+module-store.js               模块导入、存储、市场和历史修订
+content.js / background.js    页面宿主与扩展后台
+options.*                     配置中心
+```
 
-清单申请 `storage`、`userScripts` 和创建配置窗口所需的 `windows`，没有标签页读取或历史记录权限。主机范围包含 KivoWiki 页面、公开只读 API 以及 GitHub/GitLab 仓库导入所需地址。页面模式模块可以访问当前 KivoWiki 页面，但不会获得扩展内部管理 API 或后台写入接口。由于页面模式运行在网页环境，理论上可以读取页面 DOM、非 HttpOnly Cookie，并使用网页允许的网络能力；默认关闭安全模式时，只应导入可信代码。
+## 文档
 
-### 模块不是任意脚本执行器
+- [模块开发指南](docs/module-development.md)
+- [模块安全与分发规范](docs/module-security.md)
+- [平台数据能力契约](docs/platform-data-contract.md)
+- [技术验证清单](docs/technical-validation.md)
 
-导入模块默认以页面模式运行，能够自由操作 KivoWiki 当前页面的 DOM、CSS 和浏览器页面 API；这是用户主动安装社区模块后选择承担的页面级风险。开启安全模式后，导入模块统一交给 Manifest sandbox 执行，不能访问扩展 API、页面 DOM 或网络，只能通过受限消息协议使用 UI 和设置能力。页面模式使用 Chrome 120+ 的 User Scripts API；如果浏览器没有开启 User Scripts，管理器会记录明确的环境提示，不会使用违反 MV3 CSP 的 `eval` 或 `new Function` 执行导入代码，也不会把注入失败错误计入模块崩溃隔离。用户需要按安装说明开启 User Scripts，才能运行需要页面 DOM 的模块。
+## 许可证
 
-### 模块能力上下文
+当前仓库尚未添加 `LICENSE` 文件。在许可证确定前，公开源码仅供查看，不表示已授予复制、修改或再分发许可。正式接受社区使用和贡献前，请由仓库所有者选择并添加适合项目的开源许可证。
 
-内置模块只拿到宿主主动提供的上下文：页面 Shadow DOM 根节点、本页面基本位置、模块自己的本地设置、受控全局样式、依赖实例、设置变化通知和清理回调。导入模块默认使用页面模式；启用安全模式或声明 `sandbox` 时才运行在 Manifest sandbox 中。依赖按拓扑顺序初始化，同一页面中的同一版本只创建一个实例。页面模式是高权限页面代码，不能把它当成不可信插件隔离层。
-
-### 权限、签名与责任边界
-
-- 模块通过清单声明权限，安装前会显示用途。用户确认安装即表示接受已勾选权限；未知权限只记录，不会被宿主自动开放。
-- 无签名模块可以正常安装。有效签名证明“签名后文件未被修改”，首次自签名不能证明作者现实身份；同一模块后续版本沿用相同公钥时，管理器会显示密钥延续。
-- 模块包中的作者、来源和审核字段都可能由作者自行填写。没有受信任社区仓库或官方签名背书时，它们只作为信息展示，不代表 Kivowiki-Mods 官方认证。
-- 第三方模块由其作者提供，用户自行判断并承担安装、运行和数据使用风险。管理器提供提示、权限边界与稳定性保护，但不保证第三方模块的安全性、真实性、质量或可用性。
-
-### 稳定性保护
-
-- 每个模块先解析自己的精确依赖图并按拓扑顺序初始化，模块再每批最多启动 4 个，避免大量代码同时争抢主线程。
-- 依赖缺失、停用、版本不兼容、传递依赖失败、循环依赖，或模块/依赖任意一方声明的 `conflicts` 都会阻止受影响模块运行，其他正常模块不受影响。
-- 依赖的 `exports` 会在 `create()` 后验证；`claims` 与静态扫描发现的全局对象、选择器和路由重叠会显示提示，但不会被当成确定冲突擅自禁用。
-- 单模块消息限制为每秒 60 条，日志限制为每模块每分钟 100 条、全局最多保留 500 条。
-- 模块 5 分钟内连续启动失败 3 次会自动隔离；用户可重新启用并清除隔离状态。
-- 网络请求只允许 GET/HEAD，默认 30 秒超时、最多 4 次退避重试、16 并发和 512 项缓存；相同并发请求会自动合并，服务短暂异常时可以回退到刚过期缓存，认证请求头会被过滤。单次超时可按任务放宽到 180 秒，重试最多可配置 8 次。
-
-详细接口和开发流程见 [模块开发指南](docs/module-development.md)，权限与签名见 [模块安全与分发规范](docs/module-security.md)，通用数据契约见 [平台数据能力契约](docs/platform-data-contract.md)。
-
-## 兼容性与限制
-
-- 需要支持 Manifest V3 和 User Scripts API 的 Chromium 浏览器，建议 Edge 120+ 或 Chrome 120+。
-- GitHub 搜索和自定义 JSON 源属于开放发现机制，不是官方审核市场；当前没有作者账号认证或官方安全背书。GitHub 搜索仍受其未登录 API 限额和搜索索引同步时间影响，但公开仓库直接导入不依赖该额度。更新检查依赖包内 Git 仓库信息，并且只处理公开 GitHub/GitLab 仓库。
-- 自定义源和第三方直链包只在用户主动添加源或点击安装时申请对应站点的可选权限；GitHub/GitLab 使用扩展已声明的固定主机权限。该可选权限可以在浏览器扩展详情中随时撤销。
-- `Kivowiki-Mods-core-runtime` 提供文档中主要公开资源的 `list`、`get`、`listAll` 和常用语义方法。通用模块仍可使用稳定的 `context.api` / `context.data` 契约；管理器不提供认证或写入能力。
-- 页面模式可直接操作网页，浏览器无法在不失去“深度魔改”能力的前提下将其完全隔离。只信任程度较低时，应开启安全模式或使用声明为 `sandbox` 的模块。
-
-## 发布前检查
-
-1. 在无痕或干净的浏览器配置中加载扩展。正式提交前将版本号从 `1.6.0` 更新为下一次发布版本，并同步 `manifest.json`、`package.json`、配置页显示和发布校验脚本。
-2. 确认扩展权限只包含 `storage`、`userScripts`、`windows`，内容脚本只匹配两个 KivoWiki 页面地址；主机权限与 KivoWiki API、GitHub/GitLab 导入用途一致。
-3. 在配置中心关闭、打开模块，刷新页面验证持久化。
-4. 分别导入未签名、自签名和签名异常模块，确认都能继续安装且只显示轻量状态标识。
-5. 验证模块/依赖分区、Git 导入、权限选择、依赖暂缓运行、冲突检测、升级历史、回滚、日志筛选和崩溃隔离。
-6. 验证打开设置和切换市场不会请求 GitHub，点击“探索发现”后才执行搜索；同时验证自定义源权限询问、beautify 推荐安装和市场安装仍进入预检队列。
-7. 在桌面和窄屏窗口测试侧边入口、市场卡片、模块卡片、单文件/文件夹导入、安装确认、日志、原生角色图鉴触发、键盘焦点和夜间模式。
-8. 执行 `npm run check`，确认依赖解析、请求合并、分页、构建和发布结构测试全部通过。
-9. 检查发布压缩包不包含 `node_modules`、`.playwright-mcp`、`kivo-api-docs`、站点凭据、作者私钥或未计划发布的模块。
+作者：朝禊ASOGI · [Bilibili](https://space.bilibili.com/315312)

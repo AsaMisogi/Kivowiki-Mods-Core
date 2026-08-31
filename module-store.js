@@ -54,6 +54,80 @@
     try { return JSON.parse(JSON.stringify(value)); } catch { return fallback; }
   };
 
+  const reportProgress = (callback, value) => {
+    try { callback?.(value); } catch { /* 视觉进度回调不能中断实际下载。 */ }
+  };
+
+  /**
+   * 带总超时、取消和实际字节上限的流式下载。Content-Length 只用于估算进度，
+   * 真正的 100 MB 限制以读取到的字节数为准，避免错误响应头绕过限制。
+   */
+  const downloadBlob = async (url, options = {}) => {
+    const controller = new AbortController();
+    const externalSignal = options.signal;
+    let timedOut = false;
+    const abortFromExternal = () => controller.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) abortFromExternal();
+    else externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
+    const timeoutMs = Math.max(10, Math.min(Number(options.timeoutMs) || 90000, 5 * 60 * 1000));
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    reportProgress(options.onProgress, { phase: "connecting", loaded: 0, total: null });
+    try {
+      const response = await fetch(url, { ...(options.fetchOptions || {}), credentials: "omit", redirect: "follow", signal: controller.signal });
+      if (!response.ok) return { response, blob: null };
+      const declared = Number(response.headers.get("content-length") || 0);
+      const total = Number.isFinite(declared) && declared > 0 ? declared : null;
+      if (total != null && total > MAX_BYTES) {
+        const error = new Error("下载内容超过 100 MB");
+        error.code = "DOWNLOAD_TOO_LARGE";
+        throw error;
+      }
+      reportProgress(options.onProgress, { phase: "downloading", loaded: 0, total });
+      if (!response.body?.getReader) {
+        const blob = await response.blob();
+        if (blob.size > MAX_BYTES) {
+          const error = new Error("下载内容超过 100 MB");
+          error.code = "DOWNLOAD_TOO_LARGE";
+          throw error;
+        }
+        reportProgress(options.onProgress, { phase: "downloading", loaded: blob.size, total: total || blob.size });
+        return { response, blob };
+      }
+      const reader = response.body.getReader();
+      const chunks = [];
+      let loaded = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        loaded += value.byteLength;
+        if (loaded > MAX_BYTES) {
+          await reader.cancel().catch(() => {});
+          const error = new Error("下载内容超过 100 MB");
+          error.code = "DOWNLOAD_TOO_LARGE";
+          throw error;
+        }
+        chunks.push(value);
+        reportProgress(options.onProgress, { phase: "downloading", loaded, total });
+      }
+      return { response, blob: new Blob(chunks, { type: response.headers.get("content-type") || "application/octet-stream" }) };
+    } catch (error) {
+      if (timedOut) {
+        const timeout = new Error(`下载超时（${Math.round(timeoutMs / 1000)} 秒），请检查网络后重试`);
+        timeout.code = "DOWNLOAD_TIMEOUT";
+        throw timeout;
+      }
+      if (externalSignal?.aborted || error?.name === "AbortError") {
+        const aborted = new Error("下载已取消");
+        aborted.code = "DOWNLOAD_ABORTED";
+        throw aborted;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      externalSignal?.removeEventListener("abort", abortFromExternal);
+    }
+  };
+
   const canonicalJson = (value) => {
     if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
     if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
@@ -856,7 +930,7 @@
    * 将常见 GitHub/GitLab 仓库页解析为默认分支 ZIP。仓库内容仍会经过与
    * 本地文件完全相同的大小、路径、清单、签名和静态风险预检。
    */
-  const fetchRepositoryPackage = async (input, packagePath = "") => {
+  const fetchRepositoryPackage = async (input, packagePath = "", options = {}) => {
     let url;
     try { url = new URL(String(input || "").trim()); }
     catch { throw new Error("Git 仓库链接无效"); }
@@ -877,62 +951,41 @@
     } else if (hostname === "gitlab.com") {
       const project = url.pathname.replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "").split("/-/")[0];
       if (!project) throw new Error("GitLab 仓库链接缺少项目路径");
-      const metadata = await fetch(`https://gitlab.com/api/v4/projects/${encodeURIComponent(project)}`);
+      const metadata = await fetch(`https://gitlab.com/api/v4/projects/${encodeURIComponent(project)}`, { signal: options.signal });
       if (!metadata.ok) throw new Error(`GitLab 仓库读取失败（HTTP ${metadata.status}）`);
       const repositoryMetadata = await metadata.json();
       const branch = String(repositoryMetadata.default_branch || "main");
-      const commitResponse = await fetch(`https://gitlab.com/api/v4/projects/${encodeURIComponent(project)}/repository/commits/${encodeURIComponent(branch)}`);
+      const commitResponse = await fetch(`https://gitlab.com/api/v4/projects/${encodeURIComponent(project)}/repository/commits/${encodeURIComponent(branch)}`, { signal: options.signal });
       const commit = commitResponse.ok ? String((await commitResponse.json()).id || "") : "";
       archiveUrl = `https://gitlab.com/${project}/-/archive/${encodeURIComponent(branch)}/${project.split("/").pop()}-${encodeURIComponent(branch)}.zip`;
       fileName = `${project.split("/").pop()}-${branch}.zip`;
       source = { registry: "gitlab", repository: `https://gitlab.com/${project}`, provider: "gitlab", repo: project, branch, commit, packagePath: String(packagePath || "").replace(/^\/+|\/+$/g, "") };
     } else throw new Error("当前仅支持公开 GitHub 或 GitLab 仓库");
-    const response = await fetch(archiveUrl, { credentials: "omit", redirect: "follow" });
+    const { response, blob } = await downloadBlob(archiveUrl, options);
     if (!response.ok) {
       if (source.provider === "github" && response.status === 404) throw new Error("GitHub 仓库不存在、未公开或默认分支没有可下载内容");
       throw new Error(`仓库压缩包下载失败（HTTP ${response.status}）`);
     }
     if (source.provider === "github") source.commit = response.url.match(/\/zip\/([a-f0-9]{40})(?:$|[?#])/i)?.[1] || "";
-    const declaredSize = Number(response.headers.get("content-length") || 0);
-    if (declaredSize > MAX_BYTES) throw new Error("仓库压缩包超过 100 MB");
-    const blob = await response.blob();
-    if (blob.size > MAX_BYTES) throw new Error("仓库压缩包超过 100 MB");
     const file = new File([blob], fileName, { type: "application/zip" });
     Object.defineProperty(file, "kivowikiSource", { value: source, enumerable: false });
     return file;
   };
 
-  const githubApiError = async (response) => {
-    let message = "";
-    try { message = String((await response.json())?.message || ""); } catch { /* 响应没有可解析的错误正文。 */ }
-    const remaining = response.headers.get("x-ratelimit-remaining");
-    const resetAt = Number(response.headers.get("x-ratelimit-reset") || 0) * 1000;
-    if ((response.status === 403 || response.status === 429) && (remaining === "0" || /rate limit/i.test(message))) {
-      const resetText = resetAt > Date.now() ? `，预计 ${new Date(resetAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 恢复` : "";
-      const error = new Error(`GitHub 未登录 API 请求额度已用完${resetText}，请稍后再搜索；公开仓库仍可通过“Git 导入”直接安装`);
-      error.code = "GITHUB_RATE_LIMIT";
-      return error;
-    }
-    return new Error(`GitHub API 返回 HTTP ${response.status}${message ? `：${message}` : ""}`);
-  };
-
-  const githubRequest = async (url) => {
-    const response = await fetch(url, { credentials: "omit", headers: { Accept: "application/vnd.github+json" } });
-    if (!response.ok) throw await githubApiError(response);
-    const length = Number(response.headers.get("content-length") || 0);
-    if (length > MAX_REGISTRY_BYTES) throw new Error("GitHub 响应超过 5 MB");
-    return response.json();
-  };
-
   const githubRawUrl = (owner, repo, path) => `https://raw.githubusercontent.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/HEAD/${path.split("/").map(encodeURIComponent).join("/")}`;
 
   /**
-   * 根目录包走 GitHub 的静态原始文件服务验证，不占用 REST API 额度。
-   * 只有未找到根目录清单时，才使用 Git tree 兼容 monorepo 子目录。
+   * 根目录包通过 GitHub 的静态原始文件服务验证，不使用 REST API。
+   * Topic 页面只负责提供候选仓库，清单与入口仍须逐项验证。
    */
   const readGithubRawManifest = async (owner, repo, path) => {
     const response = await fetch(githubRawUrl(owner, repo, path), { credentials: "omit", redirect: "follow", headers: { Accept: "application/json" } });
     if (response.status === 404) return null;
+    if (response.status === 403 || response.status === 429) {
+      const error = new Error("GitHub 暂时限制了仓库内容访问，请稍后重试；已知仓库仍可通过“Git 导入”安装");
+      error.code = "GITHUB_CONTENT_LIMIT";
+      throw error;
+    }
     if (!response.ok) throw new Error(`GitHub 原始清单读取失败（HTTP ${response.status}）`);
     const length = Number(response.headers.get("content-length") || 0);
     if (length > MAX_REGISTRY_BYTES) throw new Error("GitHub 清单超过 5 MB");
@@ -944,59 +997,70 @@
   const githubRawFileExists = async (owner, repo, path) => {
     const response = await fetch(githubRawUrl(owner, repo, path), { method: "HEAD", credentials: "omit", redirect: "follow" });
     if (response.status === 404) return false;
+    if (response.status === 403 || response.status === 429) {
+      const error = new Error("GitHub 暂时限制了仓库内容访问，请稍后重试；已知仓库仍可通过“Git 导入”安装");
+      error.code = "GITHUB_CONTENT_LIMIT";
+      throw error;
+    }
     if (!response.ok) throw new Error(`GitHub 包文件读取失败（HTTP ${response.status}）`);
     return true;
   };
 
-  const readGithubManifest = async (owner, repo, branch, path) => {
-    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
-    const data = await githubRequest(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`);
-    if (data?.type !== "file" || typeof data.content !== "string") return null;
-    const bytes = base64ToBuffer(data.content.replace(/\s/g, ""));
-    try { return JSON.parse(new TextDecoder().decode(bytes)); }
-    catch { return null; }
-  };
-
-  const releaseDownloadCount = async (owner, repo) => {
-    const releases = await githubRequest(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases?per_page=100`);
-    return releases.reduce((total, release) => total + (Array.isArray(release.assets) ? release.assets.reduce((sum, asset) => sum + (Number(asset.download_count) || 0), 0) : 0), 0);
-  };
-
   /**
-   * 从 GitHub 公共搜索结果中筛出真正的 Kivowiki-Mods 包。
-   * 仅匹配仓库名称还不够，因此这里还检查默认分支的 Git 树、清单、入口文件
-   * 和平台版本；普通 README 或同名项目不会出现在市场里。
+   * 读取约定的 GitHub Topic 目录，再通过 Raw 服务验证根目录包。
+   * Topic 页面和 Raw 文件都不使用 GitHub REST Search API，也不需要在扩展中
+   * 保存访问令牌。Topic HTML 不是安装信任来源，下载后的包仍会完整预检。
    */
-  const discoverGitHubPackages = async ({ query = "", type = "", sort = "updated", page = 1, limit = 12, refresh = false } = {}) => {
-    const safeLimit = Math.max(1, Math.min(Number(limit) || 12, 24));
-    const safePage = Math.max(1, Math.min(Number(page) || 1, 10));
-    const keyword = String(query || "").trim();
-    const cacheKey = JSON.stringify({ keyword, type, sort, safePage, safeLimit });
+  const discoverGitHubPackages = async ({ refresh = false } = {}) => {
+    const cacheKey = "github-topic:kivowiki-mods";
     const cached = discoveryCache.get(cacheKey);
     if (!refresh && cached && cached.expiresAt > Date.now()) return cloneJson(cached.value);
     if (cached) discoveryCache.delete(cacheKey);
-    const searchText = keyword ? `${keyword} Kivowiki-Mods in:name,description,readme` : "Kivowiki-Mods in:name,description,readme";
-    const githubSort = sort === "stars" ? "stars" : sort === "published" ? "created" : "updated";
-    const search = await githubRequest(`https://api.github.com/search/repositories?q=${encodeURIComponent(searchText)}&page=${safePage}&per_page=${safeLimit}&sort=${githubSort}&order=desc`);
-    const candidates = Array.isArray(search.items) ? search.items.filter((repo) => !repo.archived && !repo.disabled && !repo.fork) : [];
-    const results = [];
-    for (const repo of candidates.slice(0, safeLimit)) {
+
+    const response = await fetch("https://github.com/topics/kivowiki-mods", {
+      credentials: "omit",
+      redirect: "follow",
+      headers: { Accept: "text/html" }
+    });
+    if (!response.ok) {
+      const error = new Error(response.status === 429
+        ? "GitHub 暂时限制了社区目录访问，请稍后重试；已知仓库仍可通过“Git 导入”安装"
+        : `GitHub 社区目录读取失败（HTTP ${response.status}）`);
+      error.code = response.status === 429 ? "GITHUB_CONTENT_LIMIT" : "GITHUB_TOPIC_ERROR";
+      throw error;
+    }
+    const declaredSize = Number(response.headers.get("content-length") || 0);
+    if (declaredSize > MAX_REGISTRY_BYTES) throw new Error("GitHub 社区目录超过 5 MB");
+    const html = await response.text();
+    if (textEncoder.encode(html).byteLength > MAX_REGISTRY_BYTES) throw new Error("GitHub 社区目录超过 5 MB");
+
+    // data-hovercard-url 是仓库链接携带的语义属性。正则回退让没有
+    // DOMParser 的测试环境也能使用相同的严格 owner/repository 提取规则。
+    const repositories = new Map();
+    if (typeof DOMParser === "function") {
+      const document = new DOMParser().parseFromString(html, "text/html");
+      for (const link of document.querySelectorAll('[data-hovercard-type="repository"][data-hovercard-url$="/hovercard"]')) {
+        const match = String(link.getAttribute("data-hovercard-url") || "").match(/^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/hovercard$/);
+        if (match) repositories.set(`${match[1]}/${match[2]}`.toLocaleLowerCase(), { owner: match[1], name: match[2] });
+      }
+    }
+    for (const match of html.matchAll(/<[^>]+>/g)) {
+      const tag = match[0];
+      if (!/data-hovercard-type=["']repository["']/i.test(tag)) continue;
+      const hovercard = tag.match(/data-hovercard-url=["']\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/hovercard["']/i);
+      if (hovercard) repositories.set(`${hovercard[1]}/${hovercard[2]}`.toLocaleLowerCase(), { owner: hovercard[1], name: hovercard[2] });
+    }
+
+    const validateRepository = async ({ owner, name }) => {
       try {
-        const owner = String(repo.owner?.login || "");
-        const name = String(repo.name || "");
-        const branch = String(repo.default_branch || "main");
-        if (!owner || !name) continue;
-        let rootPackageFound = false;
         for (const manifestPath of ["module.json", "dependency.json", "manifest.json"]) {
           const rawManifest = await readGithubRawManifest(owner, name, manifestPath);
           let manifest;
           try { manifest = validateManifest(rawManifest); } catch { continue; }
-          if (type && manifest.type !== type) continue;
           if (KivowikiModsPlatform.getCompatibility(manifest)) continue;
           if (!await githubRawFileExists(owner, name, manifest.entry)) continue;
           if (manifest.config && !await githubRawFileExists(owner, name, manifest.config)) continue;
-          const downloadCount = sort === "downloads" ? await releaseDownloadCount(owner, name).catch(() => 0) : 0;
-          results.push({
+          return {
             id: manifest.id,
             name: manifest.name,
             version: manifest.version,
@@ -1006,71 +1070,36 @@
             repository: `https://github.com/${owner}/${name}`,
             packageUrl: "",
             sourceUrl: "github",
-            stars: Number(repo.stargazers_count) || 0,
-            forks: Number(repo.forks_count) || 0,
-            downloadCount,
-            createdAt: repo.created_at || "",
-            updatedAt: repo.updated_at || "",
-            pushedAt: repo.pushed_at || "",
-            license: repo.license?.spdx_id || "",
-            homepage: repo.homepage || "",
+            stars: 0,
+            forks: 0,
+            downloadCount: 0,
+            createdAt: "",
+            updatedAt: "",
+            pushedAt: "",
+            license: "",
+            homepage: "",
             manifestPath,
             packagePath: "",
-            branch,
+            branch: "HEAD",
             commit: ""
-          });
-          rootPackageFound = true;
-          break;
-        }
-        if (rootPackageFound) continue;
-        const tree = await githubRequest(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/git/trees/${encodeURIComponent(branch)}?recursive=1`);
-        if (tree.truncated) continue;
-        const treePaths = new Set((tree.tree || []).filter((item) => item.type === "blob").map((item) => String(item.path || "").replace(/\\/g, "/")));
-        const manifests = [...treePaths].filter((path) => /(?:^|\/)(?:module|dependency|manifest)\.json$/i.test(path)).sort((left, right) => left.split("/").length - right.split("/").length);
-        for (const manifestPath of manifests.slice(0, 3)) {
-          const rawManifest = await readGithubManifest(owner, name, branch, manifestPath);
-          let manifest;
-          try { manifest = validateManifest(rawManifest); } catch { continue; }
-          const root = manifestPath.slice(0, manifestPath.lastIndexOf("/") + 1);
-          const requiredEntry = `${root}${manifest.entry}`;
-          if (!treePaths.has(requiredEntry)) continue;
-          if (manifest.config && !treePaths.has(`${root}${manifest.config}`)) continue;
-          if (type && manifest.type !== type) continue;
-          if (KivowikiModsPlatform.getCompatibility(manifest)) continue;
-          const downloadCount = sort === "downloads" ? await releaseDownloadCount(owner, name).catch(() => 0) : 0;
-          results.push({
-            id: manifest.id,
-            name: manifest.name,
-            version: manifest.version,
-            type: manifest.type,
-            description: manifest.description,
-            author: manifest.author || owner,
-            repository: `https://github.com/${owner}/${name}`,
-            packageUrl: "",
-            sourceUrl: "github",
-            stars: Number(repo.stargazers_count) || 0,
-            forks: Number(repo.forks_count) || 0,
-            downloadCount,
-            createdAt: repo.created_at || "",
-            updatedAt: repo.updated_at || "",
-            pushedAt: repo.pushed_at || "",
-            license: repo.license?.spdx_id || "",
-            homepage: repo.homepage || "",
-            manifestPath,
-            packagePath: root.replace(/\/$/, ""),
-            branch,
-            commit: ""
-          });
-          break;
+          };
         }
       } catch (error) {
-        // 普通损坏仓库只跳过；额度耗尽会影响后续所有候选，必须立即反馈给用户。
-        if (error?.code === "GITHUB_RATE_LIMIT") throw error;
-        console.warn("跳过无法验证的 GitHub 仓库", repo.full_name, error);
+        if (error?.code === "GITHUB_CONTENT_LIMIT") throw error;
+        console.warn("跳过无法验证的 GitHub 仓库", `${owner}/${name}`, error);
       }
+      return null;
+    };
+
+    const results = [];
+    const candidates = [...repositories.values()].slice(0, 40);
+    // 限制并发，避免 Topic 较大时同时向 Raw 服务发出过多请求。
+    for (let offset = 0; offset < candidates.length; offset += 4) {
+      const batch = await Promise.all(candidates.slice(offset, offset + 4).map(validateRepository));
+      results.push(...batch.filter(Boolean));
     }
-    const value = { items: results, page: safePage, totalPages: Math.max(1, Math.min(10, Math.ceil((Number(search.total_count) || results.length) / safeLimit))) };
-    discoveryCache.set(cacheKey, { value, expiresAt: Date.now() + 5 * 60 * 1000 });
+    const value = { items: results, page: 1, totalPages: 1 };
+    discoveryCache.set(cacheKey, { value, expiresAt: Date.now() + 30 * 60 * 1000 });
     while (discoveryCache.size > 20) discoveryCache.delete(discoveryCache.keys().next().value);
     return cloneJson(value);
   };
@@ -1096,17 +1125,13 @@
     }
   };
 
-  const fetchPackageUrl = async (input, source = {}) => {
+  const fetchPackageUrl = async (input, source = {}, options = {}) => {
     let url;
     try { url = new URL(String(input || "").trim()); }
     catch { throw new Error("模块包地址无效"); }
     if (url.protocol !== "https:") throw new Error("模块包地址只允许 HTTPS");
-    const response = await fetch(url.href, { credentials: "omit", redirect: "follow" });
+    const { response, blob } = await downloadBlob(url.href, options);
     if (!response.ok) throw new Error(`模块包下载失败（HTTP ${response.status}）`);
-    const length = Number(response.headers.get("content-length") || 0);
-    if (length > MAX_BYTES) throw new Error("模块包超过 100 MB");
-    const blob = await response.blob();
-    if (blob.size > MAX_BYTES) throw new Error("模块包超过 100 MB");
     const fileName = url.pathname.split("/").pop() || "kivowiki-mods-package.zip";
     const responseType = (response.headers.get("content-type") || "").split(";", 1)[0].toLowerCase();
     const isJson = responseType.includes("json") || /\.json$/i.test(fileName);
@@ -1116,7 +1141,7 @@
   };
 
   const checkForUpdate = async (item, forbiddenIds = [], installed = [], installedDependencies = []) => {
-    const repository = item?.source?.repository || item?.source?.url;
+    const repository = item?.source?.repository;
     if (!repository) return { status: "unavailable", message: "没有 Git 仓库信息" };
     const file = await fetchRepositoryPackage(repository, item?.source?.packagePath || "");
     const inspection = await inspectPackage(file, forbiddenIds.filter((id) => id !== item.id), installed, installedDependencies);

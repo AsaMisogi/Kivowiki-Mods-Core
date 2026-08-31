@@ -16,7 +16,7 @@
             <h1>Kivowiki-Mods</h1>
           </div>
         </div>
-        <span class="version">v1.6.0</span>
+        <a id="core-repository-link" class="version" href="https://github.com/AsaMisogi/Kivowiki-Mods-Core" target="_blank" rel="noopener noreferrer" title="查看 Core 管理器源码">v1.6.1 <span aria-hidden="true">↗</span></a>
       </header>
 
       <main class="content-grid">
@@ -48,22 +48,22 @@
             <span class="market-safety-note">只展示公开信息，安装仍需逐项确认</span>
           </div>
           <div id="recommendation-section" class="recommendation-section" hidden>
-            <div class="subsection-heading"><div><p class="section-kicker">编辑精选</p><h3>推荐模块与依赖</h3></div><span class="section-note">内置推荐不会调用 GitHub API</span></div>
+            <div class="subsection-heading"><div><p class="section-kicker">编辑精选</p><h3>推荐模块与依赖</h3></div><span class="section-note">查看内置推荐不会联网</span></div>
             <div id="recommendation-list" class="recommendation-list"></div>
           </div>
           <div class="exploration-heading">
             <div><p class="section-kicker">社区探索</p><h3>发现 GitHub 社区项目</h3></div>
-            <p>只有主动点击“探索发现”后才会访问 GitHub；进入设置、切换市场和查看推荐均不会消耗 API 额度。</p>
+             <p>只有主动点击“探索发现”后才会读取 GitHub Topic 目录；进入设置、切换市场和查看推荐均不会联网。</p>
           </div>
           <div class="market-toolbar">
-            <label class="search-box market-search" for="market-search"><span aria-hidden="true">⌕</span><input id="market-search" type="search" placeholder="搜索 GitHub 社区仓库" autocomplete="off"></label>
+            <label class="search-box market-search" for="market-search"><span aria-hidden="true">⌕</span><input id="market-search" type="search" placeholder="筛选社区模块" autocomplete="off"></label>
             <select id="market-type" aria-label="市场包类型"><option value="">模块和依赖</option><option value="module">功能模块</option><option value="dependency">共享依赖</option></select>
-            <select id="market-sort" aria-label="市场排序"><option value="updated">最近更新</option><option value="published">最近发布</option><option value="downloads">下载量</option><option value="stars">Star 数</option></select>
+            <select id="market-sort" aria-label="市场排序"><option value="name">名称</option><option value="updated">最近更新</option><option value="published">最近发布</option><option value="downloads">下载量</option><option value="stars">Star 数</option></select>
             <button class="primary-button" id="market-explore-button" type="button"><span aria-hidden="true">✦</span> 探索发现</button>
-            <button class="outline-button" id="market-refresh-button" type="button" title="刷新市场目录"><span aria-hidden="true">↻</span> 刷新</button>
+            <button class="outline-button" id="market-refresh-button" type="button" title="重新读取社区目录"><span aria-hidden="true">↻</span> 刷新目录</button>
           </div>
-          <p class="section-note">探索结果会验证仓库中是否存在有效的 Kivowiki-Mods 清单和入口文件，只展示与本管理器兼容的项目。安装前仍会进行完整预检。</p>
-          <div id="market-results" class="market-results" aria-live="polite"><div class="empty-state">尚未访问 GitHub。可直接安装上方推荐模块，或点击“探索发现”主动查找更多社区项目。</div></div>
+          <p class="section-note">探索结果来自带有 <code>kivowiki-mods</code> Topic 的公开仓库，并会验证根目录清单与入口文件。筛选和排序在本地完成，安装前仍会进行完整预检。</p>
+          <div id="market-results" class="market-results" aria-live="polite"><div class="empty-state">尚未读取社区目录。可直接安装上方推荐模块，或点击“探索发现”查找带有 Kivowiki-Mods Topic 的公开项目。</div></div>
           <div class="market-pagination" aria-label="市场分页">
             <button id="market-prev" class="outline-button" type="button" disabled>上一页</button>
             <span id="market-page-label">第 0 页</span>
@@ -125,7 +125,7 @@
           </section>
           <section class="settings-block" aria-labelledby="source-settings-title">
             <div class="settings-block-heading"><div><p class="section-kicker">市场来源</p><h2 id="source-settings-title">自定义源</h2></div><span class="section-note">最多保存 20 个 HTTPS 源</span></div>
-            <p class="section-note">自定义源用于补充 GitHub 搜索。源文件必须符合文档中的 `kivowiki-mods-registry` 格式；首次访问新域名时会请求可撤销的浏览器权限。</p>
+            <p class="section-note">自定义源用于补充 GitHub Topic 社区目录。源文件必须符合文档中的 `kivowiki-mods-registry` 格式；首次访问新域名时会请求可撤销的浏览器权限。</p>
             <div class="source-toolbar">
               <label class="source-url-field" for="market-source-url"><span>索引地址</span><input id="market-source-url" type="url" placeholder="https://example.com/kivowiki-mods.json" autocomplete="url"></label>
               <button class="outline-button" id="market-source-add" type="button"><span aria-hidden="true">+</span> 添加源</button>
@@ -173,6 +173,19 @@
       <footer class="footer"><span>© 朝禊ASOGI</span><span>Kivowiki-Mods</span></footer>
     </div>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="download-modal" class="config-modal" hidden>
+      <div class="config-backdrop"></div>
+      <section class="config-dialog download-dialog" role="dialog" aria-modal="true" aria-labelledby="download-title" aria-describedby="download-status" aria-busy="true">
+        <header class="config-dialog-header"><div><p class="section-kicker">远程安装</p><h2 id="download-title">正在准备下载</h2></div></header>
+        <div class="download-content">
+          <div id="download-state-icon" class="download-state-icon" aria-hidden="true">↓</div>
+          <p id="download-status" class="download-status" role="status" aria-live="polite">正在连接远程仓库……</p>
+          <progress id="download-progress" class="download-progress"></progress>
+          <p id="download-detail" class="download-detail">等待服务器响应</p>
+        </div>
+        <footer class="dialog-actions"><button id="download-close" class="outline-button" type="button" hidden>关闭</button><button id="download-cancel" class="outline-button remove-button" type="button">取消下载</button></footer>
+      </section>
+    </div>
     <div id="config-modal" class="config-modal" hidden>
       <div class="config-backdrop" data-config-close></div>
       <section class="config-dialog" role="dialog" aria-modal="true" aria-labelledby="config-title">

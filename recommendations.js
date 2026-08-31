@@ -7,6 +7,7 @@
  */
 globalThis.KivowikiModsRecommendations = [
   {
+    id: "beautify",
     title: "Kivowiki-Mods-beautify",
     description: "为 KivoWiki 提供组件动效、页面主题、首页布局、昼夜背景和字体自定义。",
     repository: "https://github.com/AsaMisogi/Kivowiki-Mods-beautify",

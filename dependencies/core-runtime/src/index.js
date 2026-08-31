@@ -29,7 +29,15 @@
     if (!client) throw new Error("核心数据客户端尚未加载");
 
     const request = (path, options = {}) => {
-      const input = { ...options, url: new URL(String(path || "").replace(/^\/+/, ""), BASE_URL).href };
+      const requestedPath = String(path || "");
+      if (requestedPath.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(requestedPath)) throw new Error("KivoWiki 请求路径无效");
+      const relativePath = requestedPath.replace(/^\/+/, "");
+      if (!relativePath || relativePath.split("/").includes("..")) {
+        throw new Error("KivoWiki 请求路径无效");
+      }
+      const resolved = new URL(relativePath, BASE_URL);
+      if (resolved.origin !== "https://api.kivo.wiki" || !resolved.pathname.startsWith("/api/v1/")) throw new Error("KivoWiki 请求路径无效");
+      const input = { ...options, url: resolved.href };
       return typeof services.request === "function" ? services.request(input) : client.request(input);
     };
     const list = async (resource, query = {}) => {
@@ -127,7 +135,7 @@
     create: createRuntime,
     sourceCode: `({create(_dependencies,services){
       const base="https://api.kivo.wiki/api/v1/";const resources={students:["data/students","students"],schools:["data/schools","school"],relations:["data/relations","relation"],items:["data/items","item"],models:["data/models","model"],spines:["data/spines","spine"],articles:["articles","article"],news:["news","news"],comics:["comics","comics"],galleries:["galleries","gallery"],musics:["musics","music"],timeline:["timeline","timeline"],bulletins:["bulletins","bulletin"]};
-      const request=(path,options={})=>{if(!services||typeof services.request!=="function")throw new Error("当前运行模式不提供 KivoWiki 网络能力");return services.request({...options,url:new URL(String(path||"").replace(/^\\/+/,""),base).href});};
+      const request=(path,options={})=>{if(!services||typeof services.request!=="function")throw new Error("当前运行模式不提供 KivoWiki 网络能力");const requested=String(path||"");if(requested.startsWith("//")||/^[a-z][a-z\\d+.-]*:/i.test(requested))throw new Error("KivoWiki 请求路径无效");const relative=requested.replace(/^\\/+/ ,"");if(!relative||relative.split("/").includes(".."))throw new Error("KivoWiki 请求路径无效");const resolved=new URL(relative,base);if(resolved.origin!=="https://api.kivo.wiki"||!resolved.pathname.startsWith("/api/v1/"))throw new Error("KivoWiki 请求路径无效");return services.request({...options,url:resolved.href});};
       const list=async(resource,query={})=>{const definition=resources[resource];if(!definition)throw new Error("不支持的 KivoWiki 列表资源："+resource);const result=await request(definition[0],{query:{page:1,page_size:50,...query},cacheTtlMs:300000});return{items:Array.isArray(result.data?.[definition[1]])?result.data[definition[1]]:[],maxPage:Math.max(1,Number(result.data?.max_page)||1),raw:result.data};};
       const listAll=async(resource,query={},options={})=>{const first=await list(resource,query),maxPage=Math.min(first.maxPage,Math.max(1,Number(options.maxPages)||10000)),items=[...first.items];options.onPage?.({page:1,maxPage,items:first.items.slice()});let nextPage=2;await Promise.all(Array.from({length:Math.min(Math.max(0,maxPage-1),Math.max(1,Number(options.concurrency)||8))},async()=>{while(nextPage<=maxPage){const page=nextPage++,result=await list(resource,{...query,page});items.push(...result.items);options.onPage?.({page,maxPage,items:result.items.slice()});}}));return{items,maxPage};};
       const get=async(resource,id,options={})=>{const definition=resources[resource],numericId=Number(id);if(!definition||!Number.isInteger(numericId)||numericId<=0)throw new Error("资源类型或 ID 无效");return(await request(definition[0]+"/"+numericId,{cacheTtlMs:600000,...options})).data;};

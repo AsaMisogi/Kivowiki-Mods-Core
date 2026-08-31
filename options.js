@@ -23,6 +23,15 @@
   const installReview = document.getElementById("install-review");
   const installTitle = document.getElementById("install-title");
   const confirmInstallButton = document.getElementById("confirm-install");
+  const downloadModal = document.getElementById("download-modal");
+  const downloadDialog = downloadModal.querySelector(".download-dialog");
+  const downloadTitle = document.getElementById("download-title");
+  const downloadStatus = document.getElementById("download-status");
+  const downloadProgress = document.getElementById("download-progress");
+  const downloadDetail = document.getElementById("download-detail");
+  const downloadStateIcon = document.getElementById("download-state-icon");
+  const downloadCancel = document.getElementById("download-cancel");
+  const downloadClose = document.getElementById("download-close");
   const panelModal = document.getElementById("panel-modal");
   const panelContent = document.getElementById("panel-content");
   const panelTitle = document.getElementById("panel-title");
@@ -60,13 +69,104 @@
   let marketPage = 1;
   let marketTotalPages = 1;
   let marketHasLoaded = false;
+  let marketCatalog = [];
   let pageRuntimeStatus = { available: null, error: "" };
+  let activeRemoteInstall = null;
+
+  const coreRepositoryLink = document.getElementById("core-repository-link");
+  const versionArrow = document.createElement("span");
+  versionArrow.setAttribute("aria-hidden", "true");
+  versionArrow.textContent = "↗";
+  coreRepositoryLink.replaceChildren(`v${chrome.runtime.getManifest().version} `, versionArrow);
 
   const showToast = (message) => {
     toast.textContent = message;
     toast.dataset.visible = "true";
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { toast.dataset.visible = "false"; }, 3000);
+  };
+
+  const formatDownloadSize = (bytes) => {
+    if (!Number.isFinite(bytes) || bytes < 0) return "";
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} B`;
+  };
+  const setDownloadProgress = ({ phase, loaded = 0, total = null }) => {
+    if (!activeRemoteInstall) return;
+    if (phase === "connecting") {
+      downloadStatus.textContent = "正在连接远程仓库……";
+      downloadDetail.textContent = "等待服务器响应";
+      downloadProgress.removeAttribute("value");
+      return;
+    }
+    downloadStatus.textContent = "正在下载模块包";
+    if (total) {
+      downloadProgress.max = total;
+      downloadProgress.value = Math.min(loaded, total);
+      const percent = Math.min(100, Math.round(loaded / total * 100));
+      downloadDetail.textContent = `${percent}% · ${formatDownloadSize(loaded)} / ${formatDownloadSize(total)}`;
+    } else {
+      downloadProgress.removeAttribute("value");
+      downloadDetail.textContent = loaded > 0 ? `已下载 ${formatDownloadSize(loaded)} · 服务器未提供总大小` : "正在接收数据";
+    }
+  };
+  const showDownloadError = (error) => {
+    downloadDialog.dataset.state = "error";
+    downloadDialog.setAttribute("aria-busy", "false");
+    downloadStateIcon.textContent = "!";
+    downloadStatus.textContent = error?.code === "DOWNLOAD_TIMEOUT" ? "下载超时" : error?.code === "DOWNLOAD_ABORTED" ? "下载已取消" : "下载失败";
+    downloadDetail.textContent = error?.message || "无法下载远程模块包";
+    downloadProgress.removeAttribute("value");
+    downloadCancel.hidden = true;
+    downloadClose.hidden = false;
+  };
+  const runRemoteInstallation = async ({ title, button, expectedType = null, download }) => {
+    if (activeRemoteInstall) { showToast("另一个远程安装正在进行，请等待完成或取消"); return; }
+    const session = { controller: new AbortController(), button, timedOut: false, timeout: null };
+    session.timeout = setTimeout(() => {
+      session.timedOut = true;
+      session.controller.abort();
+    }, 90000);
+    activeRemoteInstall = session;
+    if (button) button.disabled = true;
+    downloadTitle.textContent = title;
+    downloadDialog.dataset.state = "downloading";
+    downloadDialog.setAttribute("aria-busy", "true");
+    downloadStateIcon.textContent = "↓";
+    downloadCancel.hidden = false;
+    downloadClose.hidden = true;
+    downloadProgress.removeAttribute("value");
+    downloadStatus.textContent = "正在连接远程仓库……";
+    downloadDetail.textContent = "最长等待 90 秒";
+    downloadModal.hidden = false;
+    try {
+      const file = await download({ signal: session.controller.signal, timeoutMs: 90000, onProgress: setDownloadProgress });
+      if (activeRemoteInstall !== session) return;
+      downloadDialog.dataset.state = "complete";
+      downloadStateIcon.textContent = "✓";
+      downloadStatus.textContent = "下载完成，正在执行安装预检";
+      downloadDetail.textContent = `${formatDownloadSize(file.size)} · 正在检查清单、权限、依赖和风险`;
+      downloadProgress.max = 1;
+      downloadProgress.value = 1;
+      downloadCancel.disabled = true;
+      await inspectImportFile(file, expectedType, { signal: session.controller.signal, timeoutMs: 90000, onProgress: setDownloadProgress });
+      if (session.controller.signal.aborted) throw Object.assign(new Error("下载已取消"), { code: "DOWNLOAD_ABORTED" });
+      downloadModal.hidden = true;
+    } catch (error) {
+      if (activeRemoteInstall === session) {
+        if (session.timedOut && error?.code !== "DOWNLOAD_TIMEOUT") {
+          const timeout = new Error("下载超时（90 秒），请检查网络后重试");
+          timeout.code = "DOWNLOAD_TIMEOUT";
+          showDownloadError(timeout);
+        } else showDownloadError(error);
+      }
+    } finally {
+      clearTimeout(session.timeout);
+      if (activeRemoteInstall === session) activeRemoteInstall = null;
+      downloadCancel.disabled = false;
+      if (button) button.disabled = false;
+    }
   };
 
   const saveState = () => {
@@ -80,6 +180,31 @@
     if (className) node.className = className;
     node.textContent = text;
     return node;
+  };
+  const createRepositoryLink = (repository, className = "outline-button market-repository-link") => {
+    const link = document.createElement("a");
+    link.className = className;
+    link.href = repository;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "查看仓库";
+    return link;
+  };
+  const getRepositoryUrl = (source) => {
+    if (!source || typeof source !== "object") return "";
+    const candidates = [source.repository];
+    if (source.provider === "github" && source.owner && source.repo) candidates.push(`https://github.com/${source.owner}/${source.repo}`);
+    if (source.provider === "gitlab" && source.repo) candidates.push(`https://gitlab.com/${source.repo}`);
+    for (const candidate of candidates) {
+      try {
+        const url = new URL(String(candidate || ""));
+        if (url.protocol !== "https:" || !["github.com", "www.github.com", "gitlab.com"].includes(url.hostname.toLowerCase())) continue;
+        const parts = url.pathname.split("/").filter(Boolean);
+        if (parts.length < 2) continue;
+        return `${url.origin}/${parts.join("/").replace(/\.git$/i, "")}`;
+      } catch { /* 非仓库来源不会展示跳转入口。 */ }
+    }
+    return "";
   };
   const changeLabels = { install: "安装", upgrade: "升级", downgrade: "降级", reinstall: "重新安装" };
   const statusLabels = { ready: "可运行", disabled: "已停用", quarantined: "已隔离", incompatible: "版本不兼容", "dependency-error": "依赖异常", conflict: "存在冲突", blocked: "已阻止" };
@@ -136,10 +261,10 @@
       if (!item || typeof item !== "object") return null;
       const repository = typeof item.repository === "string" && /^https:\/\/(?:www\.)?(?:github\.com|gitlab\.com)\//i.test(item.repository) ? item.repository : "";
       const packageUrl = typeof item.packageUrl === "string" && /^https:\/\//i.test(item.packageUrl) ? item.packageUrl : "";
-      if (!item.id || !item.name || !item.version || !item.type || (!repository && !packageUrl)) return null;
+      if (!item.id || !item.name || !item.version || !["module", "dependency"].includes(item.type) || (!repository && !packageUrl)) return null;
       return {
         id: String(item.id).slice(0, 49), name: String(item.name).slice(0, 100), version: String(item.version).slice(0, 30),
-        type: item.type === "dependency" ? "dependency" : item.type === "module" ? "module" : null, description: String(item.description || "暂无描述").slice(0, 300),
+        type: item.type, description: String(item.description || "暂无描述").slice(0, 300),
         author: String(item.author || "未知作者").slice(0, 100), repository, packageUrl, packagePath: String(item.packagePath || "").slice(0, 300), sourceUrl,
         stars: Number(item.stars) || 0, downloadCount: Number(item.downloadCount) || 0, createdAt: String(item.createdAt || ""), updatedAt: String(item.updatedAt || "")
       };
@@ -153,22 +278,24 @@
       const info = document.createElement("div"); info.className = "market-card-info";
       const titleRow = document.createElement("div"); titleRow.className = "module-title-row";
       titleRow.append(textNode("h3", "", item.name), textNode("span", "module-version", `v${item.version}`), textNode("span", "status-badge badge-info", item.type === "dependency" ? "依赖" : item.type === "module" ? "模块" : "类型待确认"));
-      const stats = [item.updatedAt && `更新 ${new Date(item.updatedAt).toLocaleDateString("zh-CN")}`, item.createdAt && `发布 ${new Date(item.createdAt).toLocaleDateString("zh-CN")}`, `Star ${Number(item.stars || 0).toLocaleString("zh-CN")}`, item.downloadCount != null && item.downloadCount > 0 ? `下载 ${Number(item.downloadCount).toLocaleString("zh-CN")}` : "下载暂无数据"].filter(Boolean).join(" · ");
+      const stats = [item.updatedAt && `更新 ${new Date(item.updatedAt).toLocaleDateString("zh-CN")}`, item.createdAt && `发布 ${new Date(item.createdAt).toLocaleDateString("zh-CN")}`, item.stars > 0 && `Star ${Number(item.stars).toLocaleString("zh-CN")}`, item.downloadCount > 0 && `下载 ${Number(item.downloadCount).toLocaleString("zh-CN")}`].filter(Boolean).join(" · ");
       info.append(titleRow, textNode("p", "module-description", item.description), textNode("p", "module-meta", `作者：${item.author}${stats ? ` · ${stats}` : ""}`));
       const actions = document.createElement("div"); actions.className = "market-card-actions";
       const action = document.createElement("button"); action.type = "button"; action.className = "primary-button"; action.textContent = "安装";
       action.addEventListener("click", async () => {
-        action.disabled = true;
         try {
           if (item.packageUrl && !await requestOptionalHostPermission(item.packageUrl)) throw new Error("未获得访问该来源的浏览器权限");
-          const file = item.packageUrl ? await KivowikiModsStore.fetchPackageUrl(item.packageUrl, { registry: item.sourceUrl || "market" }) : await KivowikiModsStore.fetchRepositoryPackage(item.repository, item.packagePath || "");
-          await inspectImportFile(file, item.type || marketTypeInput.value || null);
-        } catch (error) { showToast(`市场安装失败：${error.message}`); action.disabled = false; }
+          await runRemoteInstallation({
+            title: `下载“${item.name}”`, button: action, expectedType: item.type || marketTypeInput.value || null,
+            download: (options) => item.packageUrl
+              ? KivowikiModsStore.fetchPackageUrl(item.packageUrl, { registry: item.sourceUrl || "market" }, options)
+              : KivowikiModsStore.fetchRepositoryPackage(item.repository, item.packagePath || "", options)
+          });
+        } catch (error) { showToast(`市场安装失败：${error.message}`); }
       });
       actions.append(action);
       if (item.repository) {
-        const link = document.createElement("a"); link.className = "outline-button market-repository-link"; link.href = item.repository; link.target = "_blank"; link.rel = "noreferrer"; link.textContent = "查看仓库";
-        actions.append(link);
+        actions.append(createRepositoryLink(item.repository));
       }
       card.append(info, actions); return card;
     }));
@@ -178,39 +305,57 @@
     if (sort === "stars") return Number(right.stars || 0) - Number(left.stars || 0);
     if (sort === "downloads") return Number(right.downloadCount || 0) - Number(left.downloadCount || 0);
     if (sort === "published") return String(right.createdAt || "").localeCompare(String(left.createdAt || ""));
-    return String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
+    if (sort === "updated") return String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
+    return String(left.name || "").localeCompare(String(right.name || ""), "zh-CN");
   });
 
   const searchMarket = async ({ force = false, page = 1 } = {}) => {
     const query = marketSearchInput.value.trim();
-    if (!query && !force) { showToast("请输入搜索关键词，或点击刷新查看社区项目"); marketSearchInput.focus(); return; }
     const requestId = ++marketRequestId;
     marketExploreButton.disabled = true;
     marketRefreshButton.disabled = true;
     marketResults.replaceChildren(textNode("div", "empty-state", "正在读取公开市场信息……"));
     try {
-      const github = await KivowikiModsStore.discoverGitHubPackages({ query, type: marketTypeInput.value, sort: marketSortInput.value, page, limit: 12, refresh: force });
-      const custom = [];
-      for (const source of page === 1 ? (state.preferences?.marketSources || []) : []) {
+      if (force || !marketHasLoaded) {
+        let githubItems = [];
+        let githubError = null;
         try {
-          if (!await hasOptionalHostPermission(source)) continue;
-          const result = await KivowikiModsStore.fetchRemoteJson(source);
-          custom.push(...normalizeMarketItems(result.data, result.url));
-        } catch (error) { console.warn("自定义市场源读取失败", source, error); }
+          githubItems = (await KivowikiModsStore.discoverGitHubPackages({ refresh: force })).items;
+        } catch (error) {
+          githubError = error;
+        }
+        const custom = [];
+        for (const source of state.preferences?.marketSources || []) {
+          try {
+            if (!await hasOptionalHostPermission(source)) continue;
+            const result = await KivowikiModsStore.fetchRemoteJson(source);
+            custom.push(...normalizeMarketItems(result.data, result.url));
+          } catch (error) { console.warn("自定义市场源读取失败", source, error); }
+        }
+        const uniqueItems = new Map();
+        const baseItems = githubError && marketCatalog.length ? marketCatalog : [];
+        for (const item of [...baseItems, ...custom, ...githubItems]) uniqueItems.set(`${item.type}:${item.id}:${item.version}`, item);
+        if (uniqueItems.size) marketCatalog = [...uniqueItems.values()];
+        else if (githubError && !marketCatalog.length) throw githubError;
+        if (githubError && marketCatalog.length) showToast(`社区目录刷新失败，已保留当前结果：${githubError.message}`);
       }
       if (requestId !== marketRequestId) return;
       const normalizedQuery = query.toLocaleLowerCase();
-      const filtered = sortMarketItems([...custom, ...github.items].filter((item) => {
+      const filtered = sortMarketItems(marketCatalog.filter((item) => {
         const matchesQuery = `${item.name} ${item.id} ${item.description} ${item.author}`.toLocaleLowerCase().includes(normalizedQuery);
-        return (!normalizedQuery || matchesQuery) && (!marketTypeInput.value || item.type === marketTypeInput.value || item.type == null);
+        return (!normalizedQuery || matchesQuery) && (!marketTypeInput.value || item.type === marketTypeInput.value);
       }), marketSortInput.value);
-      marketPage = page;
-      marketTotalPages = github.totalPages || 1;
+      const pageSize = 12;
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      const safePage = Math.min(Math.max(1, page), totalPages);
+      const visibleItems = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+      marketPage = safePage;
+      marketTotalPages = totalPages;
       marketHasLoaded = true;
       marketPageLabel.textContent = `第 ${marketPage} / ${marketTotalPages} 页`;
       marketPrevButton.disabled = marketPage <= 1;
       marketNextButton.disabled = marketPage >= marketTotalPages;
-      renderMarketItems(filtered, query ? "市场搜索" : "社区项目");
+      renderMarketItems(visibleItems, query ? "市场筛选" : "社区项目");
     } catch (error) { marketResults.replaceChildren(textNode("div", "empty-state", `市场搜索失败：${error.message}`)); }
     finally { marketExploreButton.disabled = false; marketRefreshButton.disabled = false; }
   };
@@ -250,21 +395,26 @@
       info.append(textNode("h4", "", item.title), textNode("p", "", item.description));
       const source = item.repository || item.packageUrl;
       if (source) {
+        const actions = document.createElement("div");
+        actions.className = "recommendation-card-actions";
         const button = document.createElement("button");
         button.className = "outline-button";
         button.type = "button";
         button.textContent = "安装";
         button.addEventListener("click", async () => {
-          button.disabled = true;
           try {
             if (item.packageUrl && !await requestOptionalHostPermission(source)) throw new Error("未获得访问该来源的浏览器权限");
-            const file = item.packageUrl
-              ? await KivowikiModsStore.fetchPackageUrl(item.packageUrl, { registry: "recommendations" })
-              : await KivowikiModsStore.fetchRepositoryPackage(item.repository);
-            await inspectImportFile(file, item.type || null);
-          } catch (error) { showToast(`推荐安装失败：${error.message}`); button.disabled = false; }
+            await runRemoteInstallation({
+              title: `下载“${item.title}”`, button, expectedType: item.type || null,
+              download: (options) => item.packageUrl
+                ? KivowikiModsStore.fetchPackageUrl(item.packageUrl, { registry: "recommendations" }, options)
+                : KivowikiModsStore.fetchRepositoryPackage(item.repository, "", options)
+            });
+          } catch (error) { showToast(`推荐安装失败：${error.message}`); }
         });
-        card.append(info, button);
+        actions.append(button);
+        if (item.repository) actions.append(createRepositoryLink(item.repository));
+        card.append(info, actions);
       } else card.append(info);
       return card;
     }));
@@ -569,7 +719,7 @@
     state.lockfile = KivowikiModsPlatform.createLockfile(state.imported, [...builtinDependencies, ...state.dependencies], selectLatest ? null : state.lockfile);
   };
 
-  const enqueueMissingDependencies = async (inspections) => {
+  const enqueueMissingDependencies = async (inspections, downloadOptions = null) => {
     const queue = [...inspections];
     const available = [...builtinDependencies, ...state.dependencies];
     const scheduled = new Set(queue.filter((item) => item.manifest.type === "dependency").map((item) => KivowikiModsPlatform.packageKey(item.manifest)));
@@ -580,7 +730,13 @@
         if (available.some((item) => item.id === id && item.enabled !== false && KivowikiModsPlatform.satisfies(item.version, range))) continue;
         const repository = inspection.manifest.dependencySources?.[id];
         if (!repository) continue;
-        const file = await KivowikiModsStore.fetchRepositoryPackage(repository);
+        if (downloadOptions) {
+          downloadTitle.textContent = `下载依赖“${id}”`;
+          downloadStatus.textContent = "正在连接依赖仓库……";
+          downloadDetail.textContent = "安装前需要补齐声明的依赖";
+          downloadProgress.removeAttribute("value");
+        }
+        const file = await KivowikiModsStore.fetchRepositoryPackage(repository, "", downloadOptions || {});
         const dependency = await KivowikiModsStore.inspectPackage(file, [...modules, ...builtinDependencies].map((item) => item.id), state.imported, [...available, ...queue.filter((item) => item.manifest.type === "dependency").map((item) => item.manifest)]);
         if (dependency.manifest.type !== "dependency" || dependency.manifest.id !== id) throw new Error(`仓库没有提供声明的依赖 ${id}`);
         if (!KivowikiModsPlatform.satisfies(dependency.manifest.version, range)) throw new Error(`自动下载的 ${id} v${dependency.manifest.version} 不符合 ${range}`);
@@ -702,7 +858,7 @@
       permissionDetails.append(textNode("summary", "", isDependency ? "依赖详情" : `权限与依赖 · ${permissions.length} 项权限`));
       const detailsText = permissions.map((permission) => permission.title).join("、") || "无额外权限";
       const dependencies = Object.entries(module.dependencies || {}).map(([id, range]) => `${id} ${range}`).join("、");
-      const source = module.builtin ? "扩展内置" : module.source?.registry || module.source?.url || "本地文件，未认证";
+      const source = module.builtin ? "扩展内置" : module.source?.repository || module.source?.registry || module.source?.url || "本地文件，未认证";
       const review = module.builtin ? "官方内置审核" : module.review?.status === "approved" ? `包内声明已审核${module.review.reviewer ? `（${module.review.reviewer}）` : ""}` : "无审核声明";
       const dependents = state.imported.filter((item) => item.dependencies?.[module.id] && KivowikiModsPlatform.satisfies(module.version, item.dependencies[module.id])).map((item) => item.name).join("、");
       if (!isDependency) permissionDetails.append(textNode("p", "", `权限：${detailsText}`), textNode("p", "", `依赖：${dependencies || "无"}`));
@@ -712,6 +868,12 @@
       card.append(info);
       const actions = document.createElement("div");
       actions.className = "module-card-actions";
+      const builtinRepositories = {
+        "quick-tools": "https://github.com/AsaMisogi/Kivowiki-Mods-Core/tree/main/modules/Kivowiki-Mods-quick-tools",
+        "core-runtime": "https://github.com/AsaMisogi/Kivowiki-Mods-Core/tree/main/dependencies/core-runtime"
+      };
+      const repository = module.builtin ? builtinRepositories[module.id] || "" : getRepositoryUrl(module.source);
+      if (repository) actions.append(createRepositoryLink(repository, "module-repository-link"));
       if (!isDependency && module.config) {
         const configButton = document.createElement("button");
         configButton.className = "text-button";
@@ -722,7 +884,7 @@
         actions.append(configButton);
       }
       if (!module.builtin) {
-        if (module.source?.repository || module.source?.url) {
+        if (module.source?.repository) {
           const updateButton = document.createElement("button");
           updateButton.className = "text-button";
           updateButton.type = "button";
@@ -912,7 +1074,14 @@
     renderRecommendations();
   };
 
-  const inspectImportFile = async (file, expectedType = null) => {
+  const inspectImportFile = async (file, expectedType = null, downloadOptions = null) => {
+    const throwIfDownloadCancelled = () => {
+      if (!downloadOptions?.signal?.aborted) return;
+      const error = new Error("下载已取消");
+      error.code = "DOWNLOAD_ABORTED";
+      throw error;
+    };
+    throwIfDownloadCancelled();
     const forbiddenIds = [...modules, ...builtinDependencies].map((item) => item.id);
     const installedDependencies = [...builtinDependencies, ...state.dependencies];
     let inspections;
@@ -929,7 +1098,9 @@
     if (expectedType && inspections.some((inspection) => inspection.manifest.type !== expectedType)) {
       throw new Error(`所选入口只接受${expectedType === "dependency" ? "依赖" : "模块"}包`);
     }
-    pendingInstallQueue = await enqueueMissingDependencies(inspections);
+    throwIfDownloadCancelled();
+    pendingInstallQueue = await enqueueMissingDependencies(inspections, downloadOptions);
+    throwIfDownloadCancelled();
     reviewNextInstallation();
   };
 
@@ -959,7 +1130,7 @@
   document.getElementById("check-all-updates").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     button.disabled = true;
-    const packages = [...state.imported, ...state.dependencies].filter((item) => item.source?.repository || item.source?.url);
+    const packages = [...state.imported, ...state.dependencies].filter((item) => item.source?.repository);
     let available = 0;
     let failed = 0;
     for (const item of packages) {
@@ -1011,6 +1182,13 @@
     } catch (error) { showToast(`安装失败：${error.message}`); confirmInstallButton.disabled = false; }
   });
   document.querySelectorAll("[data-install-close]").forEach((node) => node.addEventListener("click", closeInstall));
+  downloadCancel.addEventListener("click", () => {
+    if (!activeRemoteInstall) return;
+    downloadCancel.disabled = true;
+    downloadStatus.textContent = "正在取消下载……";
+    activeRemoteInstall.controller.abort();
+  });
+  downloadClose.addEventListener("click", () => { downloadModal.hidden = true; });
   document.querySelectorAll("[data-panel-close]").forEach((node) => node.addEventListener("click", () => { panelModal.hidden = true; }));
   const openRepository = (type) => { importTarget = type; repositoryModal.hidden = false; repositoryUrl.focus(); };
   document.getElementById("git-import-module").addEventListener("click", () => openRepository("module"));
@@ -1018,29 +1196,28 @@
   document.querySelectorAll("[data-repository-close]").forEach((node) => node.addEventListener("click", closeRepository));
   document.getElementById("repository-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    repositorySubmit.disabled = true;
-    try {
-      const file = await KivowikiModsStore.fetchRepositoryPackage(repositoryUrl.value);
-      closeRepository();
-      await inspectImportFile(file, importTarget);
-    } catch (error) {
-      showToast(`仓库导入失败：${error.message}`);
-      repositorySubmit.disabled = false;
-    }
+    const value = repositoryUrl.value;
+    const expectedType = importTarget;
+    closeRepository();
+    await runRemoteInstallation({
+      title: "下载 Git 仓库模块", button: repositorySubmit, expectedType,
+      download: (options) => KivowikiModsStore.fetchRepositoryPackage(value, "", options)
+    });
   });
   document.getElementById("open-logs").addEventListener("click", openLogs);
   logFilter.addEventListener("change", renderLogs);
   document.getElementById("clear-logs").addEventListener("click", async () => { runtimeLogs = []; await chrome.storage.local.set({ runtimeLogs: [] }); renderLogs(); render(); showToast("运行日志已清空"); });
-  marketExploreButton.addEventListener("click", () => searchMarket({ force: true, page: 1 }));
+  marketExploreButton.addEventListener("click", () => searchMarket({ force: !marketHasLoaded, page: 1 }));
   marketRefreshButton.addEventListener("click", () => {
-    if (!marketHasLoaded) { showToast("请先点击“探索发现”访问 GitHub 社区项目"); return; }
+    if (!marketHasLoaded) { showToast("请先点击“探索发现”读取社区目录"); return; }
     searchMarket({ force: true, page: 1 });
   });
-  marketPrevButton.addEventListener("click", () => searchMarket({ force: true, page: Math.max(1, marketPage - 1) }));
-  marketNextButton.addEventListener("click", () => searchMarket({ force: true, page: Math.min(marketTotalPages, marketPage + 1) }));
+  marketPrevButton.addEventListener("click", () => searchMarket({ page: Math.max(1, marketPage - 1) }));
+  marketNextButton.addEventListener("click", () => searchMarket({ page: Math.min(marketTotalPages, marketPage + 1) }));
   marketSearchInput.addEventListener("keydown", (event) => { if (event.key === "Enter") marketExploreButton.click(); });
-  marketSortInput.addEventListener("change", () => { if (marketHasLoaded) searchMarket({ force: true, page: 1 }); });
-  marketTypeInput.addEventListener("change", () => { if (marketHasLoaded) searchMarket({ force: true, page: 1 }); });
+  marketSearchInput.addEventListener("input", () => { if (marketHasLoaded) searchMarket({ page: 1 }); });
+  marketSortInput.addEventListener("change", () => { if (marketHasLoaded) searchMarket({ page: 1 }); });
+  marketTypeInput.addEventListener("change", () => { if (marketHasLoaded) searchMarket({ page: 1 }); });
   marketSourceAdd.addEventListener("click", async () => {
     const value = marketSourceUrl.value.trim();
     try {
@@ -1059,7 +1236,16 @@
   });
   document.getElementById("config-close").addEventListener("click", closeConfig);
   modal.querySelector("[data-config-close]").addEventListener("click", closeConfig);
-  document.addEventListener("keydown", (event) => { if (event.key !== "Escape") return; if (!modal.hidden) closeConfig(); else if (!installModal.hidden) closeInstall(); else if (!repositoryModal.hidden) closeRepository(); else panelModal.hidden = true; });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!downloadModal.hidden) {
+      if (activeRemoteInstall) activeRemoteInstall.controller.abort();
+      else downloadModal.hidden = true;
+    } else if (!modal.hidden) closeConfig();
+    else if (!installModal.hidden) closeInstall();
+    else if (!repositoryModal.hidden) closeRepository();
+    else panelModal.hidden = true;
+  });
   window.addEventListener("beforeunload", closeConfig);
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;

@@ -83,7 +83,8 @@
 
 页面模式的 `context` 提供：
 
-- `context.root`、`context.document`、`context.window`：当前 KivoWiki 页面对象。
+- `context.root`：当前页面的 `document`，用于兼容模块入口；新模块优先使用语义更明确的 `context.document`。
+- `context.document`、`context.window`：当前 KivoWiki 页面对象。
 - `context.site`：当前页面的 `hostname` 与 `pathname`。
 - `context.settings`：该模块的本地设置快照。
 - `await context.saveSettings(settings)`：异步保存该模块设置；即使宿主采用消息传递，也必须返回可等待的 Promise。
@@ -93,7 +94,7 @@
 - `context.permissions`：用户已授予且当前管理器认识的权限 ID 快照。
 - `context.platform`：管理器、清单和平台 API 版本及功能标识。
 - `context.dependencies`：清单声明的直接和传递依赖实例只读表。
-- `context.api`：版本化的官方 API 适配契约，不包含具体站点地址。
+- `context.api`：版本化的平台只读数据契约，不包含认证或写入能力。
 - `context.log(level, message)`：写入管理器日志查看器；不得写入 Cookie、Token 或账号隐私。
 
 声明并获得 `network.read` 后，页面模式可使用 `context.data.request(input)` 或等价的 `context.api.request(input)` 只读数据能力。它支持 URL、查询参数、超时、有限重试和内存缓存，并同时处理 HTTP 状态与常见业务信封。该接口不包含任何具体站点地址或业务路径；模块应把站点适配器放在自己的 `services/` 目录中，UI 不直接拼接地址。完整约束见 [平台数据能力契约](platform-data-contract.md)。
@@ -110,9 +111,7 @@
 
 ### `context.root`
 
-模块 UI 的推荐挂载点。它位于管理器的 Shadow DOM 内，适合放置不会影响站点布局的悬浮控件、提示或面板。模块自己的 CSS 可以通过 `context.root.append(style)` 注入。
-
-以下 `root`、`setGlobalStyle` 接口只适用于扩展内置模块，不适用于导入的 sandbox 模块。sandbox 模块使用后文的受限 UI 协议。
+社区 `page` 模块中的 `context.root` 等于当前页面的 `document`，不是管理器 Shadow DOM。建议使用 `context.document.body` 或经过确认的页面节点作为挂载点，并为所有节点和样式添加模块前缀。内置模块使用另一套宿主上下文，其 `root` 才是管理器创建的 Shadow DOM 容器；社区模块不能依赖该内部接口。`sandbox` 模块使用后文的受限 UI 协议。
 
 ### `context.site`
 
@@ -220,19 +219,19 @@
 
 配置中心支持本地单文件 JSON、完整 ZIP 项目包、选定的整个项目文件夹，以及公开 GitHub/GitLab 仓库链接。文件夹选择使用浏览器的目录选择器，文件会先在内存中按相对路径组成包，再进入与 ZIP 完全相同的预检；不会上传文件夹内容。远程仓库会下载默认分支 ZIP，然后进入与本地文件完全相同的预检。GitHub 使用默认分支的 `archive/HEAD.zip` 归档入口，由 GitHub 重定向到带精确提交的 codeload 地址；它不先读取 REST API，因此不会因匿名 API 额度耗尽而让直接导入失败。包和解压后总大小上限为 100 MB，单文件 32 MB，入口与配置脚本各 4 MB，文件数量最多 2048。资源存储在 IndexedDB，不占用 `chrome.storage.local` 的小配额。ZIP 根目录（或选定文件夹的最外层目录）必须包含 `module.json`、`dependency.json` 或 `manifest.json`。
 
+远程安装会显示连接、下载和本地预检状态。响应包含总大小时显示百分比，缺少总大小时显示实时接收容量；用户可在下载阶段取消。远程下载总超时为 90 秒，实际读取字节超过 100 MB 时会立即中止。下载完成不代表已经安装，后续清单、权限、签名、依赖和风险预检仍必须通过并由用户确认。
+
 ### 7.1 让 Git 仓库进入市场
 
-进入配置中心或切换市场标签时不会访问 GitHub。只有用户主动点击“探索发现”后，Mod 市场才搜索名称、描述和 README 中包含 `Kivowiki-Mods` 的公开 GitHub 仓库。管理器优先通过原始文件服务验证根目录清单和入口；根目录无包时才读取 Git tree 发现 monorepo 子目录。只有仓库中存在有效的 `module.json`、`dependency.json` 或兼容的 `manifest.json`，且清单、入口文件与管理器版本验证通过，项目才会显示。开发者应遵循以下规范：
+进入配置中心或切换市场标签时不会访问 GitHub。只有用户主动点击“探索发现”后，Mod 市场才读取 GitHub 的 `kivowiki-mods` Topic 目录，再通过 Raw 文件服务验证仓库根目录清单和入口。该流程不调用 GitHub REST Search API，也不需要在扩展中保存 Token。开发者应遵循以下规范：
 
-- 仓库必须公开、未归档、不是 fork，并确保默认分支可以下载。
+- 仓库必须公开，确保默认分支可以下载，并添加 `kivowiki-mods` Topic。
 - 清单使用 `manifestVersion: 4`，`name` 以 `Kivowiki-Mods-` 开头，`id`、`version`、`type` 和 `entry` 均合法。
 - `entry` 指向的文件必须真实存在；`engines.kivowikiMods` 不应排除当前管理器版本。
-- 仓库名称、简介或 README 建议明确写出 `Kivowiki-Mods`，否则 GitHub 公共搜索可能找不到仓库。
-- 新仓库公开或刚修改名称、简介、README 后，GitHub 搜索索引可能短暂延迟；可先使用“Git 导入”验证安装，不需要为此修改清单。
-- monorepo 可以在子目录放置多个包，市场会按清单所在目录分别识别、安装和更新。
-- 建议为每个稳定版本创建 GitHub Release 并上传 ZIP 附件；附件下载量可用于市场排序。
+- 清单和入口应放在仓库根目录。当前 Topic 探索不递归读取 monorepo 子目录；这类项目可使用推荐、自定义索引或直接 Git 导入。
+- Topic 页面更新或 GitHub 内容服务可能暂时延迟；可先使用“Git 导入”验证安装，不需要为此修改清单。
 
-市场搜索需要 GitHub 未登录 REST API，频繁刷新可能暂时收到 HTTP 403。管理器会说明额度耗尽及预计恢复时间；等待恢复即可。公开 GitHub 仓库的直接导入使用独立的归档下载服务，不受这项搜索额度影响。
+Topic 目录、Raw 文件与仓库归档仍可能受到 GitHub 内容服务频控或网络故障影响。直接 Git 导入不消耗 REST Search API 额度，但仍受 GitHub 内容下载限制。
 
 自定义 JSON 市场源的条目也必须明确填写 `type: "module"` 或 `type: "dependency"`；市场不会根据仓库名称猜测包类型。
 
@@ -445,11 +444,11 @@ context.log("warn", "数据源暂时不可用，已使用缓存");
 
 模块启动有 8 秒健康超时。社区模块在 5 分钟内连续失败 3 次时，默认会被自动隔离；其他模块继续运行。用户可以在配置中心重新启用该模块来清除隔离记录，也可以关闭全局崩溃自动隔离。页面模式中的同步死循环仍可能阻塞网页主线程，只有严格沙箱、代码审核和良好实现能进一步降低这类风险。
 
-## 14. 官方 API 适配
+## 14. 公开只读数据适配
 
 模块通过 `context.api.version` 和 `context.api.supports(range)` 协商平台 API 版本。复杂模块应使用 `context.api.createAdapter()` 将请求封装成 `list`、`get`、`search` 等语义方法，UI 层不应拼接 URL 或解析服务端信封。
 
-管理器只提供与站点无关的只读请求、超时、有限重试、缓存和版本协商，不包含 KivoWiki 具体地址、内部路由、认证信息或数据字段。站点变化时应更新模块自己的 `services/` 适配器。完整接口见 [平台数据能力契约](platform-data-contract.md)。
+管理器只提供只读请求、超时、有限重试、缓存和版本协商，不提供认证、账号、上传、写入或后台管理能力。公开 Wiki 数据优先通过 `core-runtime` 的 `list`、`get`、`listAll` 和 `resourceUrl` 调用；不要依赖底层路径或服务端未公开字段。完整接口见 [平台数据能力契约](platform-data-contract.md)。
 
 ### 首页数量扩展与站点 DOM
 

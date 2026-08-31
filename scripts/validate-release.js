@@ -3,6 +3,8 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
+const packageManifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const platformSource = fs.readFileSync(path.join(root, "platform.js"), "utf8");
 const QUICK_TOOLS_ROOT = "modules/Kivowiki-Mods-quick-tools";
 const moduleManifest = JSON.parse(fs.readFileSync(path.join(root, QUICK_TOOLS_ROOT, "module.json"), "utf8"));
 const quickToolsSource = fs.readFileSync(path.join(root, QUICK_TOOLS_ROOT, "src/index.js"), "utf8");
@@ -10,7 +12,9 @@ const dependencyManifest = JSON.parse(fs.readFileSync(path.join(root, "dependenc
 const failures = [];
 const expectedQuickToolsEntry = `${QUICK_TOOLS_ROOT}/src/index.js`;
 
-if (manifest.version !== "1.6.0") failures.push("扩展版本不是 1.6.0");
+if (manifest.version !== "1.6.1") failures.push("扩展版本不是 1.6.1");
+if (packageManifest.version !== manifest.version) failures.push("package.json 与扩展版本不一致");
+if (!platformSource.includes(`const MANAGER_VERSION = "${manifest.version}"`)) failures.push("platform.js 与扩展版本不一致");
 if (moduleManifest.version !== "2.3.2") failures.push("quick-tools 版本不是 2.3.2");
 if (!quickToolsSource.includes(".kq-toolbar") || !quickToolsSource.includes("pointer-events: auto")) failures.push("quick-tools 工具栏没有恢复 pointer-events 交互");
 if (dependencyManifest.version !== "1.1.0") failures.push("core-runtime 版本不是 1.1.0");
@@ -27,12 +31,14 @@ for (const id of ["market-search", "market-sort", "market-explore-button", "mark
   if (!optionsHtml.includes(`id="${id}"`)) failures.push(`options.html 缺少 ${id} 控件`);
 }
 if (optionsHtml.includes("id=\"export-lockfile\"")) failures.push("options.html 仍保留无必要的导出锁文件按钮");
+if (!optionsHtml.includes(`>v${manifest.version} <span aria-hidden="true">↗</span></a>`)) failures.push("options.html 的静态版本兜底与扩展版本不一致");
 if (optionsHtml.includes("market-auto-load") || optionsJs.includes("autoLoadMarket")) failures.push("市场仍包含自动 GitHub 发现入口");
 if (optionsJs.includes('if (target === "market")') || !optionsJs.includes('marketExploreButton.addEventListener("click"')) failures.push("GitHub 探索没有严格绑定到用户主动操作");
 if (!recommendationsSource.includes("https://github.com/AsaMisogi/Kivowiki-Mods-beautify")) failures.push("编辑精选缺少 beautify 推荐模块");
 if (!Array.isArray(manifest.optional_host_permissions) || !manifest.optional_host_permissions.includes("https://*/*")) failures.push("manifest.json 缺少自定义市场源所需的可选 HTTPS 权限");
 if (!manifest.host_permissions?.includes("https://github.com/*")) failures.push("manifest.json 缺少 GitHub 默认分支归档入口权限");
-if (!manifest.host_permissions?.includes("https://raw.githubusercontent.com/*")) failures.push("manifest.json 缺少 GitHub 根目录包低额度验证所需权限");
+if (!manifest.host_permissions?.includes("https://raw.githubusercontent.com/*")) failures.push("manifest.json 缺少 GitHub 根目录包静态验证所需权限");
+if (manifest.host_permissions?.includes("https://api.github.com/*")) failures.push("manifest.json 仍保留已停用的 GitHub REST API 权限");
 for (const tab of ["modules", "dependencies", "market", "settings"]) {
   if (!optionsHtml.includes(`data-tab-target="${tab}"`) || !optionsHtml.includes(`data-tab-panel="${tab}"`)) failures.push(`options.html 缺少 ${tab} 标签页`);
 }
