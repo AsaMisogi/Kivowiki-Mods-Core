@@ -21,7 +21,9 @@ Kivowiki-Mods 是用于 [基沃托斯古书馆](https://kivo.wiki/) 的 Chromium
 ### Chrome Web Store
 
 商店版本可直接从 Chrome Web Store 安装，后续更新由浏览器处理。
+
 传送门：
+
 [https://chromewebstore.google.com/detail/kivowiki-mods/](https://chromewebstore.google.com/detail/kivowiki-mods/)
 
 
