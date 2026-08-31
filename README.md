@@ -96,6 +96,12 @@ Core 不向模块提供认证、账号、写入或后台管理接口，也不会
 
 新模块建议从 [`examples/hello-module`](examples/hello-module/) 开始。社区模块应做到可独立安装、停用和清理，不依赖 Core 的私有存储结构、消息格式或 DOM 实现。
 
+kivowiki API参考文档（非官方，个人学习用）：
+
+[https://github.com/AsaMisogi/Kivowiki-Mods-API-doc](https://github.com/AsaMisogi/Kivowiki-Mods-API-doc)
+
+
+
 最小清单示例：
 
 ```json
