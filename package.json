@@ -1,7 +1,9 @@
 {
   "name": "kivowiki-mods-core",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "private": true,
+  "license": "Apache-2.0",
+  "author": "朝禊ASOGI",
   "type": "commonjs",
   "scripts": {
     "build": "npm --prefix modules/Kivowiki-Mods-quick-tools run build",

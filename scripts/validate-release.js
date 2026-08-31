@@ -12,7 +12,7 @@ const dependencyManifest = JSON.parse(fs.readFileSync(path.join(root, "dependenc
 const failures = [];
 const expectedQuickToolsEntry = `${QUICK_TOOLS_ROOT}/src/index.js`;
 
-if (manifest.version !== "1.6.1") failures.push("扩展版本不是 1.6.1");
+if (manifest.version !== "1.6.2") failures.push("扩展版本不是 1.6.2");
 if (packageManifest.version !== manifest.version) failures.push("package.json 与扩展版本不一致");
 if (!platformSource.includes(`const MANAGER_VERSION = "${manifest.version}"`)) failures.push("platform.js 与扩展版本不一致");
 if (moduleManifest.version !== "2.3.2") failures.push("quick-tools 版本不是 2.3.2");

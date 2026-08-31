@@ -38,6 +38,8 @@ test("编辑精选内置 beautify 且展示时不发起网络请求", () => {
 
 test("Core、推荐和已安装包都提供仓库入口", () => {
   assert.match(optionsHtml, /id="core-repository-link"[^>]+Kivowiki-Mods-Core/);
+  assert.match(optionsHtml, /class="outline-button repository-button"[^>]+Kivowiki-Mods-Core/);
+  assert.match(optionsHtml, /repository-button[\s\S]*?<svg[^>]+viewBox="0 0 24 24"/);
   assert.match(optionsJs, /createRepositoryLink\(item\.repository\)/);
   assert.match(optionsJs, /getRepositoryUrl\(module\.source\)/);
   assert.match(optionsJs, /module-repository-link/);

@@ -1,7 +1,7 @@
 (function registerKivowikiModsPlatform() {
   "use strict";
 
-  const MANAGER_VERSION = "1.6.1";
+  const MANAGER_VERSION = "1.6.2";
   const API_VERSION = "1.1.0";
   const MANIFEST_VERSION = 4;
   const ITEM_TYPES = Object.freeze({ MODULE: "module", DEPENDENCY: "dependency" });

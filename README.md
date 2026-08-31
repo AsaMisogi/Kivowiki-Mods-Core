@@ -2,7 +2,7 @@
 
 Kivowiki-Mods 是用于 [基沃托斯古书馆](https://kivo.wiki/) 的 Chromium 扩展和本地模块管理器。它负责安装、启停和更新模块，处理依赖与配置，并在模块运行异常时隔离故障。
 
-当前 Core 版本为 `1.6.1`，支持 Chrome、Edge 及其他兼容 Manifest V3 和 User Scripts API 的 Chromium 浏览器。
+当前 Core 版本为 `1.6.2`，支持 Chrome、Edge 及其他兼容 Manifest V3 和 User Scripts API 的 Chromium 浏览器。
 
 ## 主要功能
 
@@ -220,6 +220,14 @@ options.*                     配置中心
 
 ## 许可证
 
-当前仓库尚未添加 `LICENSE` 文件。在许可证确定前，公开源码仅供查看，不表示已授予复制、修改或再分发许可。正式接受社区使用和贡献前，请由仓库所有者选择并添加适合项目的开源许可证。
+本仓库采用 [Apache License 2.0](LICENSE) 开源。
+
+你可以将本项目用于个人或商业用途，也可以复制、修改和分发源码或构建产物。分发原版或修改版时，请遵守 Apache 2.0 的要求，包括：
+
+- 保留完整的 [`LICENSE`](LICENSE) 与 [`NOTICE`](NOTICE) 文件。
+- 保留其中的版权及署名声明，原作者为 **朝禊ASOGI**。
+- 修改文件后，在相关文件中明确说明已经做出修改。
+
+完整权利和义务以 [`LICENSE`](LICENSE) 正文为准。本软件按“原样”提供，不附带任何明示或默示担保。
 
 作者：朝禊ASOGI · [Bilibili](https://space.bilibili.com/315312)
